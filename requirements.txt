@@ -1,0 +1,5 @@
+aiogram==3.18.0
+aiosqlite==0.21.0
+qrcode[pil]==8.0
+pillow==11.1.0
+python-dotenv==1.0.1
