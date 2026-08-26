@@ -5,7 +5,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 import database as db
-from keyboards.admin_kb import get_admin_main_kb, format_money, get_open_store_kb, get_cancel_kb
+from keyboards.admin_kb import (
+    get_admin_main_kb, format_money, get_open_store_kb, 
+    get_cancel_kb, get_contact_kb, get_subscription_kb, get_recovery_contact_kb
+)
 from keyboards.superadmin_kb import get_superadmin_main_kb
 from keyboards.client_kb import get_client_main_kb
 import config
@@ -39,7 +42,6 @@ async def start_recover_my_store_cb(call: CallbackQuery, state: FSMContext):
         "Agar telefoningiz yo'qolgan yoki yangi Telegram ochgan bo'lsangiz:\n"
         "Avval ro'yxatdan o'tgan telefon raqamingizni pastdagi <b>«📱 Telefon raqamni yuborish (Tiklash)»</b> tugmasi orqali yuboring (yoki qo'lda yozing):"
     )
-    from keyboards.admin_kb import get_recovery_contact_kb
     await call.message.answer(text, parse_mode="HTML", reply_markup=get_recovery_contact_kb())
     await call.answer()
 
@@ -66,7 +68,6 @@ async def process_user_recover_phone(message: Message, state: FSMContext, bot: B
     user_id = message.from_user.id
     user_full_name = message.from_user.full_name
     
-    # Do'konni yangi hisobga o'tkazish
     await db.transfer_shop_ownership(shop['id'], user_id, user_full_name)
     await state.clear()
     
@@ -81,7 +82,6 @@ async def process_user_recover_phone(message: Message, state: FSMContext, bot: B
     )
     await message.answer(success_text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=days_left))
     
-    # Super Adminga xavfsizlik bildirishnomasi
     for sa_id in config.SUPER_ADMIN_IDS:
         try:
             sa_notify = (
@@ -94,6 +94,8 @@ async def process_user_recover_phone(message: Message, state: FSMContext, bot: B
             await bot.send_message(chat_id=sa_id, text=sa_notify, parse_mode="HTML")
         except Exception:
             pass
+
+# ==================== ASOSIY START HANDLER ====================
 
 @router.message(Command("cancel"))
 @router.message(CommandStart())
@@ -246,18 +248,16 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
         )
         return
 
-    # 7. Yangi tashrif buyuruvchi (Do'kon ochish taklifi)
+    # 7. Yangi tashrif buyuruvchi (Do'kon ochish / Tiklash taklifi)
     promo_text = (
         f"👋 Assalomu alaykum, <b>{user_full_name}</b>!\n\n"
         f"📒 <b>Qarz Daftari Botiga xush kelibsiz!</b>\n\n"
         f"Bu bot mahalla oziq-ovqat va boshqa do'konlar uchun qarz va nasiyalarni avtomatlashtirish, "
         f"mijozlarga avtomatik hisobot yuborish va qarz aylanmasini nazorat qilish uchun mo'ljallangan.\n\n"
         f"🎁 <b>Siz uchun 1 OY (30 KUN) MUTLAQO BEPUL sinov muddati taqdim etiladi!</b>\n\n"
-        f"O'z do'koningizni ochish uchun pastdagi tugmani bosing 👇"
+        f"O'z do'koningizni ochish yoki mavjud do'konni yangi profilga tiklash uchun tanlang 👇"
     )
     await message.answer(promo_text, parse_mode="HTML", reply_markup=get_open_store_kb())
-
-from keyboards.admin_kb import get_admin_main_kb, format_money, get_open_store_kb, get_cancel_kb, get_contact_kb, get_subscription_kb
 
 # ==================== O'Z DO'KONINI OCHISH (TRIAL REGISTER) ====================
 
