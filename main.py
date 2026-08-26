@@ -23,7 +23,7 @@ async def handle_health_check(request):
 
 async def start_web_server():
     """Render Web Service uchun port ochuvchi yengil server"""
-    port = int(os.getenv("PORT", 8080))
+    port = int(os.environ.get("PORT", 10000))
     app = web.Application()
     app.router.add_get("/", handle_health_check)
     app.router.add_get("/health", handle_health_check)
