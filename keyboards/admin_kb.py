@@ -1,4 +1,5 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+import config
 
 def format_money(amount: float) -> str:
     return f"{amount:,.0f}".replace(",", " ") + " so'm"
@@ -22,6 +23,14 @@ def get_contact_kb() -> ReplyKeyboardMarkup:
         ],
         resize_keyboard=True,
         one_time_keyboard=True
+    )
+
+def get_subscription_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="💬 To'lov chekini yuborish", url=f"https://t.me/{config.ADMIN_USERNAME}")],
+            [InlineKeyboardButton(text="🔙 Orqaga", callback_data="back_to_admin_main")]
+        ]
     )
 
 def get_open_store_kb() -> InlineKeyboardMarkup:

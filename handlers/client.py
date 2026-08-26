@@ -74,9 +74,11 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
                 f"⚠️ <b>{shop['name']} — Obuna muddati tugadi!</b>\n\n"
                 f"Sizning 30 kunlik sinov muddatingiz yakunlandi.\n"
                 f"Botdan foydalanishni davom ettirish va qarzlarni boshqarish uchun obuna to'lovini amalga oshiring.\n\n"
-                f"📞 <b>Murojaat uchun:</b> @dilshod_admin yoki telefon orqali bog'laning."
+                f"💳 <b>To'lov uchun karta:</b> <code>{config.CARD_NUMBER}</code>\n"
+                f"👤 <b>Qabul qiluvchi:</b> {config.CARD_HOLDER}\n\n"
+                f"📌 <i>To'lov qilgach, chekni quyidagi tugma orqali adminga yuboring!</i>"
             )
-            await message.answer(text_expired, parse_mode="HTML")
+            await message.answer(text_expired, parse_mode="HTML", reply_markup=get_subscription_kb())
             return
         
         await message.answer(
@@ -186,7 +188,7 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
     )
     await message.answer(promo_text, parse_mode="HTML", reply_markup=get_open_store_kb())
 
-from keyboards.admin_kb import get_admin_main_kb, format_money, get_open_store_kb, get_cancel_kb, get_contact_kb
+from keyboards.admin_kb import get_admin_main_kb, format_money, get_open_store_kb, get_cancel_kb, get_contact_kb, get_subscription_kb
 
 # ==================== O'Z DO'KONINI OCHISH (TRIAL REGISTER) ====================
 

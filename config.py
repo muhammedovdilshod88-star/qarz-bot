@@ -6,6 +6,11 @@ load_dotenv()
 # Telegram Bot Token
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8436067790:AAFG6ENO7k5o3WgxwNvAaMx8xz6DmmAG-zU")
 
+# Admin va to'lov rekvizitlari
+CARD_NUMBER = "5614 6816 2779 4484"
+CARD_HOLDER = "Dilshod M"
+ADMIN_USERNAME = "DilshodMuhammad00"
+
 # Super Admin ID lari (Sizning Telegram ID ingiz)
 # Masalan: [123456789]
 SUPER_ADMIN_IDS = [int(i) for i in os.getenv("SUPER_ADMIN_IDS", "").split(",") if i.strip()]

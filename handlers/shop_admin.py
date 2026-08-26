@@ -171,6 +171,8 @@ async def process_shop_name_change(message: Message, state: FSMContext):
         )
     await state.clear()
 
+from keyboards.admin_kb import get_subscription_kb
+
 @router.message(StateFilter('*'), F.text.contains("Obuna"))
 async def show_subscription_info(message: Message, state: FSMContext):
     await state.clear()
@@ -179,19 +181,21 @@ async def show_subscription_info(message: Message, state: FSMContext):
         return
     
     is_valid, days_left, expires_at = await db.check_shop_subscription(shop['id'])
-    status_icon = "🟢 Faol (Ishlamoqda)" if is_valid else "🔴 Tugagan (Nofaol)"
+    status_icon = "🟢 Faol" if days_left > 0 else "🔴 Muddati tugagan"
     date_formatted = str(expires_at)[:10] if expires_at else "Noma'lum"
     
     text = (
-        f"⏳ <b>{shop['name']} — Obuna va Sinov Muddati</b>\n\n"
+        f"⏳ <b>{shop['name']} — Obuna va Billing Ma'lumotlari</b>\n\n"
         f"⚡ <b>Holati:</b> {status_icon}\n"
         f"📅 <b>Qolgan muddat:</b> <b>{days_left} kun</b>\n"
         f"📆 <b>Amal qilish sanasi:</b> <code>{date_formatted}</code> gacha\n\n"
-        f"💡 <i>Siz 1 oylik bepul sinov xizmatidan foydalanmoqdasiz. Obunani uzaytirish yoki savollar bo'lsa, adminga murojaat qiling:</i>\n"
-        f"📞 <b>Aloqa:</b> @dilshod_admin"
+        f"────────────────────\n"
+        f"💳 <b>Obunani uzaytirish uchun to'lov rekvizitlari:</b>\n"
+        f"💳 Karta raqami: <code>{config.CARD_NUMBER}</code>\n"
+        f"👤 Qabul qiluvchi: <b>{config.CARD_HOLDER}</b>\n\n"
+        f"📌 <i>To'lov amalga oshirilgach, chekni pastdagi tugma orqali yuboring. Obunangiz darhol uzaytirib beriladi!</i>"
     )
-    is_sa = message.from_user.id in config.SUPER_ADMIN_IDS
-    await message.answer(text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=days_left))
+    await message.answer(text, parse_mode="HTML", reply_markup=get_subscription_kb())
 
 @router.message(StateFilter('*'), F.text == "📲 Do'kon QR kodi")
 async def send_shop_qr_code(message: Message, bot: Bot, state: FSMContext):
