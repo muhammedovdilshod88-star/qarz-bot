@@ -162,13 +162,36 @@ async def process_shop_name_change(message: Message, state: FSMContext):
     shop = await db.get_shop_by_admin(message.from_user.id)
     if shop:
         await db.update_shop_name(shop['id'], new_name)
+        is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
         is_sa = message.from_user.id in config.SUPER_ADMIN_IDS
         await message.answer(
             f"✅ Do'kon nomi muvaffaqiyatli o'zgartirildi: <b>{new_name}</b>",
             parse_mode="HTML",
-            reply_markup=get_admin_main_kb(is_sa)
+            reply_markup=get_admin_main_kb(is_sa, days_left=days_left)
         )
     await state.clear()
+
+@router.message(StateFilter('*'), F.text.contains("Obuna"))
+async def show_subscription_info(message: Message, state: FSMContext):
+    await state.clear()
+    shop = await db.get_shop_by_admin(message.from_user.id)
+    if not shop:
+        return
+    
+    is_valid, days_left, expires_at = await db.check_shop_subscription(shop['id'])
+    status_icon = "🟢 Faol (Ishlamoqda)" if is_valid else "🔴 Tugagan (Nofaol)"
+    date_formatted = str(expires_at)[:10] if expires_at else "Noma'lum"
+    
+    text = (
+        f"⏳ <b>{shop['name']} — Obuna va Sinov Muddati</b>\n\n"
+        f"⚡ <b>Holati:</b> {status_icon}\n"
+        f"📅 <b>Qolgan muddat:</b> <b>{days_left} kun</b>\n"
+        f"📆 <b>Amal qilish sanasi:</b> <code>{date_formatted}</code> gacha\n\n"
+        f"💡 <i>Siz 1 oylik bepul sinov xizmatidan foydalanmoqdasiz. Obunani uzaytirish yoki savollar bo'lsa, adminga murojaat qiling:</i>\n"
+        f"📞 <b>Aloqa:</b> @dilshod_admin"
+    )
+    is_sa = message.from_user.id in config.SUPER_ADMIN_IDS
+    await message.answer(text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=days_left))
 
 @router.message(StateFilter('*'), F.text == "📲 Do'kon QR kodi")
 async def send_shop_qr_code(message: Message, bot: Bot, state: FSMContext):
