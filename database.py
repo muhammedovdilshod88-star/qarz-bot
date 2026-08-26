@@ -203,6 +203,39 @@ async def use_staff_invite(token: str, telegram_id: int, full_name: str):
             shop = await cursor3.fetchone()
             return shop, "Muvaffaqiyatli qo'shildi!"
 
+async def get_shop_by_phone(phone: str):
+    """Telefon raqam orqali do'konni qidirish (tiklash uchun)"""
+    if not phone:
+        return None
+    # Raqamdan faqat oxirgi 9 ta raqamni olamiz (masalan 901234567)
+    clean_phone = "".join(filter(str.isdigit, phone))
+    last_9 = clean_phone[-9:] if len(clean_phone) >= 9 else clean_phone
+    
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM shops") as cursor:
+            shops = await cursor.fetchall()
+            for s in shops:
+                if s['phone']:
+                    s_clean = "".join(filter(str.isdigit, s['phone']))
+                    if last_9 in s_clean:
+                        return s
+    return None
+
+async def transfer_shop_ownership(shop_id: int, new_admin_id: int, new_name: str = "Do'kon egasi"):
+    """Do'konni yangi Telegram ID ga to'liq va xavfsiz o'tkazish"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        # 1. shops jadvalida admin_id ni yangilash
+        await db.execute("UPDATE shops SET admin_id = ? WHERE id = ?", (new_admin_id, shop_id))
+        
+        # 2. shop_admins jadvalidagi eski owner ni o'chirib, yangisini qo'yish
+        await db.execute("DELETE FROM shop_admins WHERE shop_id = ? AND role = 'owner'", (shop_id,))
+        await db.execute(
+            "INSERT OR REPLACE INTO shop_admins (shop_id, telegram_id, name, role) VALUES (?, ?, ?, 'owner')",
+            (shop_id, new_admin_id, new_name)
+        )
+        await db.commit()
+
 async def get_shop_by_admin(admin_id: int):
     """Foydalanuvchi do'kon egasi yoki qo'shilgan sherik bo'lsa do'konni qaytaradi"""
     async with aiosqlite.connect(DB_PATH) as db:

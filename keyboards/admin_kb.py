@@ -36,8 +36,19 @@ def get_subscription_kb() -> InlineKeyboardMarkup:
 def get_open_store_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🏪 O'z do'konimni ochish (30 kun BEPUL)", callback_data="start_open_my_store")]
+            [InlineKeyboardButton(text="🏪 O'z do'konimni ochish (30 kun BEPUL)", callback_data="start_open_my_store")],
+            [InlineKeyboardButton(text="🔐 Do'konimni tiklash (Telefon orqali)", callback_data="start_recover_my_store")]
         ]
+    )
+
+def get_recovery_contact_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📱 Telefon raqamni yuborish (Tiklash)", request_contact=True)],
+            [KeyboardButton(text="❌ Bekor qilish")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
     )
 
 def get_staff_list_kb(staff_list: list, can_add: bool = True) -> InlineKeyboardMarkup:

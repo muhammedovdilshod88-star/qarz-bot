@@ -1,4 +1,4 @@
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -15,6 +15,7 @@ class SuperAdminStates(StatesGroup):
     add_shop_name = State()
     add_shop_admin_id = State()
     add_shop_phone = State()
+    change_shop_admin_id = State()
 
 from aiogram.filters import StateFilter
 
@@ -104,6 +105,63 @@ async def toggle_shop_active(call: CallbackQuery):
         f"• Jami nasiya: {format_money(stats['total_debt'])}\n"
     )
     await call.message.edit_text(text, reply_markup=get_shop_manage_kb(shop_id, shop['is_active']), parse_mode="HTML")
+
+@router.callback_query(F.data.startswith("sa_chadmin_"))
+async def change_admin_start(call: CallbackQuery, state: FSMContext):
+    if not is_super_admin(call.from_user.id):
+        return
+    shop_id = int(call.data.split("_")[2])
+    shop = await db.get_shop_by_id(shop_id)
+    if not shop:
+        await call.answer("Do'kon topilmadi!", show_alert=True)
+        return
+        
+    await state.set_state(SuperAdminStates.change_shop_admin_id)
+    await state.update_data(shop_id=shop_id)
+    await call.message.answer(
+        f"🔄 <b>{shop['name']}</b> do'koni uchun yangi admin <b>Telegram ID raqamini</b> kiriting:\n\n"
+        f"<i>Hozirgi Admin ID:</i> <code>{shop['admin_id']}</code>",
+        parse_mode="HTML",
+        reply_markup=get_cancel_kb()
+    )
+    await call.answer()
+
+@router.message(SuperAdminStates.change_shop_admin_id)
+async def process_change_shop_admin_id(message: Message, state: FSMContext, bot: Bot):
+    raw_text = message.text.strip().replace(" ", "").replace("@", "")
+    try:
+        new_admin_id = int(raw_text)
+    except ValueError:
+        await message.answer("⚠️ Iltimos, faqat raqamdan iborat Telegram ID kiriting:")
+        return
+        
+    data = await state.get_data()
+    shop_id = data['shop_id']
+    shop = await db.get_shop_by_id(shop_id)
+    
+    await db.transfer_shop_ownership(shop_id, new_admin_id, "Do'kon egasi")
+    await state.clear()
+    
+    await message.answer(
+        f"✅ <b>Admin muvaffaqiyatli o'zgartirildi!</b>\n\n"
+        f"🏪 Do'kon: <b>{shop['name']}</b>\n"
+        f"🆔 Yangi Admin Telegram ID: <code>{new_admin_id}</code>\n\n"
+        f"Do'konchi endi yangi profilidan <code>/start</code> ni bossa do'kon to'liq ochiladi.",
+        parse_mode="HTML",
+        reply_markup=get_superadmin_main_kb()
+    )
+    
+    # Yangi adminga tabrik xabari yuborishga urinish
+    try:
+        is_valid, days_left, _ = await db.check_shop_subscription(shop_id)
+        notify_msg = (
+            f"🎉 <b>Assalomu alaykum!</b>\n\n"
+            f"Super Admin tomonidan sizga <b>{shop['name']}</b> do'koni boshqaruvi biriktirildi.\n"
+            f"Boshlash uchun <code>/start</code> ni bosing."
+        )
+        await bot.send_message(chat_id=new_admin_id, text=notify_msg, parse_mode="HTML")
+    except Exception:
+        pass
 
 @router.callback_query(F.data.startswith("sa_del_"))
 async def delete_shop_action(call: CallbackQuery):

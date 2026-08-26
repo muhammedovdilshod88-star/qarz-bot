@@ -21,8 +21,12 @@ def get_shop_manage_kb(shop_id: int, is_active: bool) -> InlineKeyboardMarkup:
     toggle_text = "🔴 Bloklash" if is_active else "🟢 Faollashtirish"
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(text="➕ 1 yil (+365 kun)", callback_data=f"sa_ext_{shop_id}_365"),
+                InlineKeyboardButton(text="🔄 Adminni o'zgartirish", callback_data=f"sa_chadmin_{shop_id}")
+            ],
             [InlineKeyboardButton(text=toggle_text, callback_data=f"sa_toggle_{shop_id}")],
-            [InlineKeyboardButton(text="🗑 O'chirish", callback_data=f"sa_del_{shop_id}")],
+            [InlineKeyboardButton(text="🗑 Do'konni o'chirish", callback_data=f"sa_del_{shop_id}")],
             [InlineKeyboardButton(text="🔙 Orqaga", callback_data="sa_back_shops")]
         ]
     )

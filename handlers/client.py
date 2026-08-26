@@ -16,15 +16,84 @@ class UserRegisterShop(StatesGroup):
     shop_name = State()
     shop_phone = State()
 
-@router.message(StateFilter(UserRegisterShop), F.text.in_(["❌ Bekor qilish", "/cancel"]))
+class UserRecoverShop(StatesGroup):
+    phone = State()
+
+@router.message(StateFilter(UserRegisterShop, UserRecoverShop), F.text.in_(["❌ Bekor qilish", "/cancel"]))
 async def cancel_user_register_cb(message: Message, state: FSMContext):
     await state.clear()
     promo_text = (
         f"👋 Assalomu alaykum, <b>{message.from_user.full_name}</b>!\n\n"
         f"🎁 <b>Siz uchun 1 OY (30 KUN) MUTLAQO BEPUL sinov muddati taqdim etiladi!</b>\n\n"
-        f"O'z do'koningizni ochish uchun pastdagi tugmani bosing 👇"
+        f"O'z do'koningizni ochish yoki mavjud do'konni yangi profilga tiklash uchun tanlang 👇"
     )
     await message.answer(promo_text, parse_mode="HTML", reply_markup=get_open_store_kb())
+
+# ==================== DO'KONNI TIKLASH (RECOVERY) ====================
+
+@router.callback_query(F.data == "start_recover_my_store")
+async def start_recover_my_store_cb(call: CallbackQuery, state: FSMContext):
+    await state.set_state(UserRecoverShop.phone)
+    text = (
+        "🔐 <b>Do'konni yangi profilga tiklash</b>\n\n"
+        "Agar telefoningiz yo'qolgan yoki yangi Telegram ochgan bo'lsangiz:\n"
+        "Avval ro'yxatdan o'tgan telefon raqamingizni pastdagi <b>«📱 Telefon raqamni yuborish (Tiklash)»</b> tugmasi orqali yuboring (yoki qo'lda yozing):"
+    )
+    from keyboards.admin_kb import get_recovery_contact_kb
+    await call.message.answer(text, parse_mode="HTML", reply_markup=get_recovery_contact_kb())
+    await call.answer()
+
+@router.message(UserRecoverShop.phone)
+async def process_user_recover_phone(message: Message, state: FSMContext, bot: Bot):
+    if message.contact:
+        phone = message.contact.phone_number
+        if not phone.startswith("+"):
+            phone = "+" + phone
+    else:
+        phone = message.text.strip() if message.text else ""
+        
+    shop = await db.get_shop_by_phone(phone)
+    if not shop:
+        await message.answer(
+            f"⚠️ <b>Do'kon topilmadi!</b>\n\n"
+            f"<code>{phone}</code> telefon raqamiga biriktirilgan do'kon topilmadi.\n"
+            f"Iltimos, to'g'ri raqam kiriting yoki Super Adminga murojaat qiling:\n"
+            f"📞 @{config.ADMIN_USERNAME}",
+            parse_mode="HTML"
+        )
+        return
+        
+    user_id = message.from_user.id
+    user_full_name = message.from_user.full_name
+    
+    # Do'konni yangi hisobga o'tkazish
+    await db.transfer_shop_ownership(shop['id'], user_id, user_full_name)
+    await state.clear()
+    
+    is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
+    is_sa = user_id in config.SUPER_ADMIN_IDS
+    
+    success_text = (
+        f"🎉 <b>Do'koningiz muvaffaqiyatli tiklandi!</b>\n\n"
+        f"🏪 <b>{shop['name']}</b> do'koni barcha mijozlari va qarz daftari bilan ushbu yangi Telegram profilingizga biriktirildi.\n"
+        f"⏳ Obuna muddati: <b>{days_left} kun qoldi</b>.\n\n"
+        f"Xavfsizlik uchun eski hisobingizdan adminlik huquqi avtomatik olib tashlandi."
+    )
+    await message.answer(success_text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=days_left))
+    
+    # Super Adminga xavfsizlik bildirishnomasi
+    for sa_id in config.SUPER_ADMIN_IDS:
+        try:
+            sa_notify = (
+                f"🛡 <b>Xavfsizlik: Do'kon yangi hisobga tiklandi!</b>\n\n"
+                f"🏪 Do'kon: <b>{shop['name']}</b> (ID: {shop['id']})\n"
+                f"👤 Yangi Admin: <b>{user_full_name}</b>\n"
+                f"🆔 Yangi Telegram ID: <code>{user_id}</code>\n"
+                f"📞 Tel: <code>{phone}</code>"
+            )
+            await bot.send_message(chat_id=sa_id, text=sa_notify, parse_mode="HTML")
+        except Exception:
+            pass
 
 @router.message(Command("cancel"))
 @router.message(CommandStart())
