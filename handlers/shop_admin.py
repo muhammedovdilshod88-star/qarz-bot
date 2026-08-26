@@ -1,4 +1,5 @@
 from aiogram import Router, F, Bot
+from aiogram.filters import StateFilter
 from aiogram.types import Message, CallbackQuery, BufferedInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -24,17 +25,16 @@ class AdminStates(StatesGroup):
     add_staff_name = State()
     add_staff_tg_id = State()
 
-@router.message(F.text == "❌ Bekor qilish")
+@router.message(StateFilter('*'), F.text.in_(["❌ Bekor qilish", "/cancel"]))
 async def cancel_action(message: Message, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
     if shop:
+        is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
         is_sa = message.from_user.id in config.SUPER_ADMIN_IDS
-        await message.answer("Amal bekor qilindi.", reply_markup=get_admin_main_kb(is_sa))
+        await message.answer("Amal bekor qilindi.", reply_markup=get_admin_main_kb(is_sa, days_left=days_left))
     else:
         await message.answer("Amal bekor qilindi.")
-
-from aiogram.filters import StateFilter
 
 # ==================== SHERIKLAR (ADMINLAR) BOSHQARUVI ====================
 

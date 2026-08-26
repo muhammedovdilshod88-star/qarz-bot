@@ -16,6 +16,16 @@ class SuperAdminStates(StatesGroup):
     add_shop_admin_id = State()
     add_shop_phone = State()
 
+from aiogram.filters import StateFilter
+
+@router.message(StateFilter('*'), F.text.in_(["❌ Bekor qilish", "/cancel"]))
+async def superadmin_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    if is_super_admin(message.from_user.id):
+        await message.answer("Amal bekor qilindi.", reply_markup=get_superadmin_main_kb())
+    else:
+        await message.answer("Amal bekor qilindi.")
+
 def is_super_admin(user_id: int) -> bool:
     return not config.SUPER_ADMIN_IDS or user_id in config.SUPER_ADMIN_IDS
 
