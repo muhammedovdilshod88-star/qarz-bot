@@ -3,23 +3,16 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 def format_money(amount: float) -> str:
     return f"{amount:,.0f}".replace(",", " ") + " so'm"
 
-def get_admin_main_kb(is_superadmin: bool = False, days_left: int = 30) -> ReplyKeyboardMarkup:
+def get_admin_main_kb(is_superadmin: bool = False) -> ReplyKeyboardMarkup:
     buttons = [
         [KeyboardButton(text="📋 Mijozlar ro'yxati"), KeyboardButton(text="➕ Yangi mijoz")],
         [KeyboardButton(text="🔍 Qidirish"), KeyboardButton(text="📊 Statistika")],
         [KeyboardButton(text="📲 Do'kon QR kodi"), KeyboardButton(text="👥 Sheriklar (Adminlar)")],
-        [KeyboardButton(text="⚙️ Do'kon nomi"), KeyboardButton(text=f"⏳ Obuna: {days_left} kun qoldi")],
+        [KeyboardButton(text="⚙️ Do'kon nomi")],
     ]
     if is_superadmin:
         buttons.append([KeyboardButton(text="👑 Super Admin Paneli")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
-
-def get_open_store_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🏪 O'z do'konimni ochish (30 kun BEPUL)", callback_data="start_open_my_store")]
-        ]
-    )
 
 def get_staff_list_kb(staff_list: list, can_add: bool = True) -> InlineKeyboardMarkup:
     rows = []
