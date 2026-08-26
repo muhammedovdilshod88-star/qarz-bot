@@ -186,6 +186,8 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
     )
     await message.answer(promo_text, parse_mode="HTML", reply_markup=get_open_store_kb())
 
+from keyboards.admin_kb import get_admin_main_kb, format_money, get_open_store_kb, get_cancel_kb, get_contact_kb
+
 # ==================== O'Z DO'KONINI OCHISH (TRIAL REGISTER) ====================
 
 @router.callback_query(F.data == "start_open_my_store")
@@ -212,14 +214,20 @@ async def process_user_shop_name(message: Message, state: FSMContext):
     await state.update_data(shop_name=name)
     await state.set_state(UserRegisterShop.shop_phone)
     await message.answer(
-        f"Do'kon: <b>{name}</b>\n\nEndi telefon raqamingizni kiriting (yoki '-' yozing):",
-        parse_mode="HTML"
+        f"Do'kon nomi: <b>{name}</b>\n\nPastdagi <b>«📱 Telefon raqamni ulashish»</b> tugmasini bosing yoki raqamingizni yozing:",
+        parse_mode="HTML",
+        reply_markup=get_contact_kb()
     )
 
 @router.message(UserRegisterShop.shop_phone)
 async def process_user_shop_phone(message: Message, state: FSMContext, bot: Bot):
-    phone_raw = message.text.strip()
-    phone = phone_raw if phone_raw != "-" else None
+    if message.contact:
+        phone = message.contact.phone_number
+        if not phone.startswith("+"):
+            phone = "+" + phone
+    else:
+        phone_raw = message.text.strip() if message.text else ""
+        phone = phone_raw if phone_raw != "-" else None
     
     data = await state.get_data()
     user_id = message.from_user.id

@@ -14,6 +14,16 @@ def get_admin_main_kb(is_superadmin: bool = False, days_left: int = 30) -> Reply
         buttons.append([KeyboardButton(text="👑 Super Admin Paneli")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
+def get_contact_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📱 Telefon raqamni ulashish", request_contact=True)],
+            [KeyboardButton(text="❌ Bekor qilish")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+
 def get_open_store_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[

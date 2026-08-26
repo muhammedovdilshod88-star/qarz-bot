@@ -6,7 +6,7 @@ import database as db
 from keyboards.superadmin_kb import (
     get_superadmin_main_kb, get_shops_list_kb, get_shop_manage_kb
 )
-from keyboards.admin_kb import get_cancel_kb, get_admin_main_kb, format_money
+from keyboards.admin_kb import get_cancel_kb, get_admin_main_kb, format_money, get_contact_kb
 import config
 
 router = Router()
@@ -176,14 +176,20 @@ async def process_new_shop_admin_id(message: Message, state: FSMContext):
     await state.update_data(admin_id=admin_id)
     await state.set_state(SuperAdminStates.add_shop_phone)
     await message.answer(
-        f"Admin Telegram ID: <code>{admin_id}</code>\n\nDo'kon telefon raqamini kiriting (yoki '-' yozing):",
-        parse_mode="HTML"
+        f"Admin Telegram ID: <code>{admin_id}</code>\n\nDo'kon telefon raqamini kiriting (yoki pastdagi tugmani bosing):",
+        parse_mode="HTML",
+        reply_markup=get_contact_kb()
     )
 
 @router.message(SuperAdminStates.add_shop_phone)
 async def process_new_shop_phone(message: Message, state: FSMContext):
-    phone_raw = message.text.strip()
-    phone = phone_raw if phone_raw != "-" else None
+    if message.contact:
+        phone = message.contact.phone_number
+        if not phone.startswith("+"):
+            phone = "+" + phone
+    else:
+        phone_raw = message.text.strip() if message.text else ""
+        phone = phone_raw if phone_raw != "-" else None
     
     data = await state.get_data()
     try:
