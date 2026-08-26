@@ -47,6 +47,36 @@ async def list_shops(message: Message):
     kb = get_shops_list_kb(shops)
     await message.answer("🏪 <b>Mavjud do'konlar:</b>\nBoshqarish uchun do'konni tanlang:", reply_markup=kb, parse_mode="HTML")
 
+@router.callback_query(F.data.startswith("sa_ext_"))
+async def extend_subscription_cb(call: CallbackQuery):
+    if not is_super_admin(call.from_user.id):
+        return
+    parts = call.data.split("_")
+    shop_id = int(parts[2])
+    days = int(parts[3])
+    
+    await db.extend_shop_subscription(shop_id, days)
+    await call.answer(f"✅ Obuna +{days} kunga uzaytirildi!", show_alert=True)
+    
+    # Qayta ko'rsatish
+    shop = await db.get_shop_by_id(shop_id)
+    stats = await db.get_shop_statistics(shop_id)
+    is_valid, days_left, expires_at = await db.check_shop_subscription(shop_id)
+    status_text = "🟢 Faol" if is_valid else "🔴 Bloklangan / Tugagan"
+    
+    text = (
+        f"🏪 <b>Do'kon:</b> {shop['name']}\n"
+        f"🆔 ID: {shop['id']}\n"
+        f"👤 <b>Admin Telegram ID:</b> <code>{shop['admin_id']}</code>\n"
+        f"📞 <b>Telefon:</b> {shop['phone'] or 'Kiritilmagan'}\n"
+        f"⏳ <b>Obuna muddati:</b> <b>{days_left} kun qoldi</b> (Gacha: {str(expires_at)[:10]})\n"
+        f"⚡ <b>Holat:</b> {status_text}\n\n"
+        f"📊 <b>Statistika:</b>\n"
+        f"• Mijozlar: {stats['total_customers']} ta\n"
+        f"• Jami nasiya: {format_money(stats['total_debt'])}\n"
+    )
+    await call.message.edit_text(text, reply_markup=get_shop_manage_kb(shop_id, shop['is_active']), parse_mode="HTML")
+
 @router.callback_query(F.data.startswith("sa_shop_"))
 async def manage_shop_detail(call: CallbackQuery):
     if not is_super_admin(call.from_user.id):
@@ -58,13 +88,15 @@ async def manage_shop_detail(call: CallbackQuery):
         return
     
     stats = await db.get_shop_statistics(shop_id)
-    status_text = "🟢 Faol" if shop['is_active'] else "🔴 Bloklangan"
+    is_valid, days_left, expires_at = await db.check_shop_subscription(shop_id)
+    status_text = "🟢 Faol" if is_valid else "🔴 Bloklangan / Tugagan"
     
     text = (
         f"🏪 <b>Do'kon:</b> {shop['name']}\n"
         f"🆔 ID: {shop['id']}\n"
         f"👤 <b>Admin Telegram ID:</b> <code>{shop['admin_id']}</code>\n"
         f"📞 <b>Telefon:</b> {shop['phone'] or 'Kiritilmagan'}\n"
+        f"⏳ <b>Obuna muddati:</b> <b>{days_left} kun qoldi</b> (Gacha: {str(expires_at)[:10]})\n"
         f"⚡ <b>Holat:</b> {status_text}\n\n"
         f"📊 <b>Statistika:</b>\n"
         f"• Mijozlar: {stats['total_customers']} ta\n"

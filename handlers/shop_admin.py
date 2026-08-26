@@ -29,8 +29,9 @@ async def cancel_action(message: Message, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
     if shop:
+        is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
         is_sa = message.from_user.id in config.SUPER_ADMIN_IDS
-        await message.answer("Amal bekor qilindi.", reply_markup=get_admin_main_kb(is_sa))
+        await message.answer("Amal bekor qilindi.", reply_markup=get_admin_main_kb(is_sa, days_left=days_left))
     else:
         await message.answer("Amal bekor qilindi.")
 
@@ -162,11 +163,12 @@ async def process_shop_name_change(message: Message, state: FSMContext):
     shop = await db.get_shop_by_admin(message.from_user.id)
     if shop:
         await db.update_shop_name(shop['id'], new_name)
+        is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
         is_sa = message.from_user.id in config.SUPER_ADMIN_IDS
         await message.answer(
             f"✅ Do'kon nomi muvaffaqiyatli o'zgartirildi: <b>{new_name}</b>",
             parse_mode="HTML",
-            reply_markup=get_admin_main_kb(is_sa)
+            reply_markup=get_admin_main_kb(is_sa, days_left=days_left)
         )
     await state.clear()
 
@@ -432,11 +434,12 @@ async def process_customer_phone(message: Message, state: FSMContext, bot: Bot):
     
     bot_info = await bot.get_me()
     is_sa = message.from_user.id in config.SUPER_ADMIN_IDS
+    is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
     
     await message.answer(
         f"✅ Yangi mijoz muvaffaqiyatli qo'shildi:\n👤 <b>{data['full_name']}</b>\n📞 {phone or 'Kiritilmadi'}",
         parse_mode="HTML",
-        reply_markup=get_admin_main_kb(is_sa)
+        reply_markup=get_admin_main_kb(is_sa, days_left=days_left)
     )
     
     # Taklif yuborish tugmalarini ham chiqarib beramiz
@@ -456,6 +459,13 @@ async def start_add_debt(call: CallbackQuery, state: FSMContext):
     if not customer:
         await call.answer("Mijoz topilmadi!", show_alert=True)
         return
+        
+    shop = await db.get_shop_by_id(customer['shop_id'])
+    if shop:
+        is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
+        if not is_valid:
+            await call.answer("⚠️ Do'kon obuna muddati tugagan! Iltimos, obunani uzaytiring.", show_alert=True)
+            return
     
     await state.set_state(AdminStates.add_debt_amount)
     await state.update_data(customer_id=customer_id, customer_name=customer['full_name'])
@@ -503,6 +513,7 @@ async def process_debt_description(message: Message, state: FSMContext, bot: Bot
     
     await state.clear()
     is_sa = message.from_user.id in config.SUPER_ADMIN_IDS
+    is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
     
     msg_text = (
         f"✅ <b>Qarz muvaffaqiyatli yozildi!</b>\n\n"
@@ -511,7 +522,7 @@ async def process_debt_description(message: Message, state: FSMContext, bot: Bot
         f"📝 Izoh: <i>{desc or 'Izohsiz'}</i>\n"
         f"💰 Jami qarz balansi: <b>{format_money(updated_customer['balance'])}</b>"
     )
-    await message.answer(msg_text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa))
+    await message.answer(msg_text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=days_left))
     
     # Agar mijoz telegram orqali ulangan bo'lsa, unga bildirishnoma yuboramiz
     if updated_customer['telegram_id']:
@@ -572,6 +583,7 @@ async def process_payment_amount(message: Message, state: FSMContext, bot: Bot):
     
     await state.clear()
     is_sa = message.from_user.id in config.SUPER_ADMIN_IDS
+    is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
     
     msg_text = (
         f"✅ <b>To'lov qabul qilindi!</b>\n\n"
@@ -579,7 +591,7 @@ async def process_payment_amount(message: Message, state: FSMContext, bot: Bot):
         f"➖ Qabul qilingan to'lov: <b>{format_money(amount)}</b>\n"
         f"💰 Qolgan qarz balansi: <b>{format_money(updated_customer['balance'])}</b>"
     )
-    await message.answer(msg_text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa))
+    await message.answer(msg_text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=days_left))
     
     # Mijozga telegram orqali to'lov xabarini yuborish
     if updated_customer['telegram_id']:

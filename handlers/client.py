@@ -10,6 +10,13 @@ import config
 
 router = Router()
 
+from aiogram.fsm.state import State, StatesGroup
+from keyboards.admin_kb import get_admin_main_kb, format_money, get_open_store_kb, get_cancel_kb
+
+class UserRegisterShop(StatesGroup):
+    shop_name = State()
+    shop_phone = State()
+
 @router.message(Command("cancel"))
 @router.message(CommandStart())
 async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: FSMContext):
@@ -17,8 +24,8 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
     user_id = message.from_user.id
     user_full_name = message.from_user.full_name
     
-    # 1. Super Admin tekshiruvi (agar hali do'konlar bo'lmasa yoki ro'yxatda bo'lsa)
-    is_sa = (user_id in config.SUPER_ADMIN_IDS) or (len(config.SUPER_ADMIN_IDS) == 0 and not await db.get_shop_by_admin(user_id) and not await db.list_all_shops())
+    # 1. Super Admin tekshiruvi (agar ro'yxatda bo'lsa)
+    is_sa = (user_id in config.SUPER_ADMIN_IDS)
     
     # 2. Agar sherik (adminlik) taklif havolasi orqali kirayotgan bo'lsa (/start staff_TOKEN)
     args = command.args
@@ -38,12 +45,13 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
             except Exception:
                 pass
                 
+            is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
             welcome_staff = (
                 f"🎉 <b>Tabriklaymiz, {user_full_name}!</b>\n\n"
                 f"Siz <b>{shop['name']}</b> do'koni administratorlar safiga qo'shildingiz.\n"
                 f"Endi siz ham mijozlar qarzlarini yozishingiz, to'lovlarni qabul qilishingiz va yangi mijozlar qo'shishingiz mumkin."
             )
-            await message.answer(welcome_staff, parse_mode="HTML", reply_markup=get_admin_main_kb(False))
+            await message.answer(welcome_staff, parse_mode="HTML", reply_markup=get_admin_main_kb(False, days_left=days_left))
             return
         else:
             await message.answer(f"⚠️ {msg}")
@@ -52,15 +60,23 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
     # 3. Do'konchi (Admin yoki Sherik) tekshiruvi
     shop = await db.get_shop_by_admin(user_id)
     if shop:
-        if not shop['is_active']:
-            await message.answer("⚠️ Sizning do'koningiz faolligi vaqtincha to'xtatilgan. Iltimos, admin bilan bog'laning.")
+        is_valid, days_left, expires_at = await db.check_shop_subscription(shop['id'])
+        if not is_valid:
+            text_expired = (
+                f"⚠️ <b>{shop['name']} — Obuna muddati tugadi!</b>\n\n"
+                f"Sizning 30 kunlik sinov muddatingiz yakunlandi.\n"
+                f"Botdan foydalanishni davom ettirish va qarzlarni boshqarish uchun obuna to'lovini amalga oshiring.\n\n"
+                f"📞 <b>Murojaat uchun:</b> @dilshod_admin yoki telefon orqali bog'laning."
+            )
+            await message.answer(text_expired, parse_mode="HTML")
             return
         
         await message.answer(
             f"Assalomu alaykum, <b>{user_full_name}</b>!\n"
-            f"🏪 Do'kon: <b>{shop['name']}</b> boshqaruv paneliga xush kelibsiz.",
+            f"🏪 Do'kon: <b>{shop['name']}</b> boshqaruv paneliga xush kelibsiz.\n"
+            f"⏳ <i>Obuna muddati: yana {days_left} kun faol.</i>",
             parse_mode="HTML",
-            reply_markup=get_admin_main_kb(is_sa)
+            reply_markup=get_admin_main_kb(is_sa, days_left=days_left)
         )
         return
         
@@ -74,8 +90,7 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
         )
         return
 
-    # 3. Agar maxsus mijoz taklif havolasi orqali kirayotgan bo'lsa (/start c_CUSTOMERID)
-    args = command.args
+    # 4. Agar maxsus mijoz taklif havolasi orqali kirayotgan bo'lsa (/start c_CUSTOMERID)
     if args and args.startswith("c_"):
         try:
             cust_id = int(args.replace("c_", ""))
@@ -109,7 +124,7 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
         except Exception:
             pass
 
-    # 4. Agar umumiy QR kod orqali kirayotgan bo'lsa (/start shop_ID)
+    # 5. Agar umumiy QR kod orqali kirayotgan bo'lsa (/start shop_ID)
     if args and args.startswith("shop_"):
         try:
             shop_id = int(args.replace("shop_", ""))
@@ -146,7 +161,7 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
         except Exception:
             pass
 
-    # 5. Oddiy mijoz (avval ulanib bo'lgan)
+    # 6. Oddiy mijoz (avval ulanib bo'lgan)
     cust_accounts = await db.get_customers_by_telegram_id(user_id)
     if cust_accounts:
         await message.answer(
@@ -155,13 +170,83 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
         )
         return
 
-    # Agar hech kim bo'lmasa
+    # 7. Yangi tashrif buyuruvchi (Do'kon ochish taklifi)
+    promo_text = (
+        f"👋 Assalomu alaykum, <b>{user_full_name}</b>!\n\n"
+        f"📒 <b>Qarz Daftari Botiga xush kelibsiz!</b>\n\n"
+        f"Bu bot mahalla oziq-ovqat va boshqa do'konlar uchun qarz va nasiyalarni avtomatlashtirish, "
+        f"mijozlarga avtomatik hisobot yuborish va qarz aylanmasini nazorat qilish uchun mo'ljallangan.\n\n"
+        f"🎁 <b>Siz uchun 1 OY (30 KUN) MUTLAQO BEPUL sinov muddati taqdim etiladi!</b>\n\n"
+        f"O'z do'koningizni ochish uchun pastdagi tugmani bosing 👇"
+    )
+    await message.answer(promo_text, parse_mode="HTML", reply_markup=get_open_store_kb())
+
+# ==================== O'Z DO'KONINI OCHISH (TRIAL REGISTER) ====================
+
+@router.callback_query(F.data == "start_open_my_store")
+async def start_open_my_store_cb(call: CallbackQuery, state: FSMContext):
+    # Mavjudligini tekshiramiz
+    existing = await db.get_shop_by_admin(call.from_user.id)
+    if existing:
+        await call.answer("Sizda allaqachon do'kon mavjud!", show_alert=True)
+        return
+        
+    await state.set_state(UserRegisterShop.shop_name)
+    await call.message.answer(
+        "🏪 <b>Do'koningiz nomini kiriting:</b>\n<i>(Masalan: Omad Oziq-ovqat, Baraka Market)</i>",
+        parse_mode="HTML",
+        reply_markup=get_cancel_kb()
+    )
+    await call.answer()
+
+@router.message(UserRegisterShop.shop_name)
+async def process_user_shop_name(message: Message, state: FSMContext):
+    name = message.text.strip()
+    if len(name) < 2:
+        await message.answer("Iltimos, do'kon nomini to'g'ri kiriting:")
+        return
+    await state.update_data(shop_name=name)
+    await state.set_state(UserRegisterShop.shop_phone)
     await message.answer(
-        "👋 Assalomu alaykum!\n\n"
-        "Ushbu bot mahalla do'konlari uchun qarz daftari hisoblanadi.\n"
-        "Do'koningizga ulanish uchun do'kondagi <b>QR kodni</b> skaner qiling yoki havolasidan kiring.",
+        f"Do'kon: <b>{name}</b>\n\nEndi telefon raqamingizni kiriting (yoki '-' yozing):",
         parse_mode="HTML"
     )
+
+@router.message(UserRegisterShop.shop_phone)
+async def process_user_shop_phone(message: Message, state: FSMContext, bot: Bot):
+    phone_raw = message.text.strip()
+    phone = phone_raw if phone_raw != "-" else None
+    
+    data = await state.get_data()
+    user_id = message.from_user.id
+    user_full_name = message.from_user.full_name
+    
+    shop_id = await db.create_shop(data['shop_name'], user_id, phone, days=30)
+    await state.clear()
+    
+    welcome_msg = (
+        f"🎉 <b>Tabriklaymiz, {user_full_name}!</b>\n\n"
+        f"🏪 <b>{data['shop_name']}</b> do'koningiz muvaffaqiyatli ochildi!\n"
+        f"🎁 Sizga <b>30 KUNLIK BEPUL SINOV MUDDATI</b> berildi.\n\n"
+        f"Endi do'kon QR kodini chiqarib osib qo'yishingiz, qarzlarni yozishingiz va to'lovlarni qabul qilishingiz mumkin."
+    )
+    is_sa = user_id in config.SUPER_ADMIN_IDS
+    await message.answer(welcome_msg, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=30))
+    
+    # Super Adminga bildirishnoma
+    for sa_id in config.SUPER_ADMIN_IDS:
+        try:
+            sa_notify = (
+                f"🔔 <b>Yangi do'kon ochildi (Trial)!</b>\n\n"
+                f"🏪 Do'kon: <b>{data['shop_name']}</b> (ID: {shop_id})\n"
+                f"👤 Egasi: <b>{user_full_name}</b>\n"
+                f"🆔 Telegram ID: <code>{user_id}</code>\n"
+                f"📞 Tel: {phone or 'Kiritilmadi'}\n"
+                f"⏳ Muddat: 30 kun berildi."
+            )
+            await bot.send_message(chat_id=sa_id, text=sa_notify, parse_mode="HTML")
+        except Exception:
+            pass
 
 # ==================== MIJOZ TUGMALARI ====================
 

@@ -11,8 +11,22 @@ async def init_db():
                 admin_id INTEGER NOT NULL,
                 phone TEXT,
                 is_active INTEGER DEFAULT 1,
+                subscription_until TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
+        """)
+        
+        # Migratsiya: subscription_until ustunini tekshirib qo'shish
+        try:
+            await db.execute("ALTER TABLE shops ADD COLUMN subscription_until TIMESTAMP")
+        except Exception:
+            pass # Allaqachon mavjud bo'lsa o'tkazib yuboradi
+
+        # Mavjud do'konlarga 30 kunlik muddat berish (agar bo'sh bo'lsa)
+        await db.execute("""
+            UPDATE shops 
+            SET subscription_until = datetime('now', '+30 days') 
+            WHERE subscription_until IS NULL
         """)
         
         await db.execute("""
@@ -80,11 +94,12 @@ async def init_db():
 
 # ==================== SHOPS & ADMINS (DO'KONLAR VA SHERIKLAR) ====================
 
-async def create_shop(name: str, admin_id: int, phone: str = None) -> int:
+async def create_shop(name: str, admin_id: int, phone: str = None, days: int = 30) -> int:
+    """Yangi do'kon ochish (default: 30 kunlik sinov muddati bilan)"""
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
-            "INSERT INTO shops (name, admin_id, phone, is_active) VALUES (?, ?, ?, 1)",
-            (name, admin_id, phone)
+            "INSERT INTO shops (name, admin_id, phone, is_active, subscription_until) VALUES (?, ?, ?, 1, datetime('now', ?))",
+            (name, admin_id, phone, f"+{days} days")
         )
         shop_id = cursor.lastrowid
         await db.execute(
@@ -93,6 +108,42 @@ async def create_shop(name: str, admin_id: int, phone: str = None) -> int:
         )
         await db.commit()
         return shop_id
+
+async def check_shop_subscription(shop_id: int):
+    """Do'kon obunasi holati va qolgan kunlarni qaytaradi"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT 
+                is_active,
+                subscription_until,
+                CAST(JULIANDAY(subscription_until) - JULIANDAY('now') AS INTEGER) as days_left
+            FROM shops 
+            WHERE id = ?
+        """, (shop_id,)) as cursor:
+            row = await cursor.fetchone()
+            if not row:
+                return False, 0, None
+                
+            days_left = row['days_left'] if row['days_left'] is not None else 0
+            is_valid = bool(row['is_active']) and (days_left >= 0)
+            return is_valid, max(0, days_left), row['subscription_until']
+
+async def extend_shop_subscription(shop_id: int, days: int = 30):
+    """Do'kon obunasini uzaytirish"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            UPDATE shops 
+            SET subscription_until = datetime(
+                CASE 
+                    WHEN subscription_until > datetime('now') THEN subscription_until 
+                    ELSE datetime('now') 
+                END, 
+                ?
+            ), is_active = 1
+            WHERE id = ?
+        """, (f"+{days} days", shop_id))
+        await db.commit()
 
 import secrets
 
