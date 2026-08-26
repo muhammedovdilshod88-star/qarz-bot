@@ -186,19 +186,23 @@ async def process_new_shop_phone(message: Message, state: FSMContext):
     phone = phone_raw if phone_raw != "-" else None
     
     data = await state.get_data()
-    shop_id = await db.create_shop(data['shop_name'], data['admin_id'], phone)
-    await state.clear()
-    
-    await message.answer(
-        f"🎉 <b>Yangi do'kon muvaffaqiyatli yaratildi!</b>\n\n"
-        f"🏪 Do'kon: <b>{data['shop_name']}</b>\n"
-        f"🆔 ID: {shop_id}\n"
-        f"👤 Admin Telegram ID: <code>{data['admin_id']}</code>\n"
-        f"📞 Telefon: {phone or 'Kiritilmagan'}\n\n"
-        f"Endi do'konchi botga kirib <code>/start</code> ni bossa, unga do'konchi paneli ochiladi.",
-        parse_mode="HTML",
-        reply_markup=get_superadmin_main_kb()
-    )
+    try:
+        shop_id = await db.create_shop(data['shop_name'], data['admin_id'], phone, days=30)
+        await state.clear()
+        
+        await message.answer(
+            f"🎉 <b>Yangi do'kon muvaffaqiyatli yaratildi!</b>\n\n"
+            f"🏪 Do'kon: <b>{data['shop_name']}</b>\n"
+            f"🆔 ID: {shop_id}\n"
+            f"👤 Admin Telegram ID: <code>{data['admin_id']}</code>\n"
+            f"📞 Telefon: {phone or 'Kiritilmagan'}\n"
+            f"⏳ Obuna muddati: <b>30 kun (Faol)</b>\n\n"
+            f"Endi do'konchi botga kirib <code>/start</code> ni bossa, unga do'konchi paneli ochiladi.",
+            parse_mode="HTML",
+            reply_markup=get_superadmin_main_kb()
+        )
+    except Exception as e:
+        await message.answer(f"⚠️ Xatolik yuz berdi: {e}\nIltimos, qaytadan urinib ko'ring yoki /cancel bosing.")
 
 @router.message(F.text == "📊 Platforma statistikasi")
 async def platform_stats(message: Message):

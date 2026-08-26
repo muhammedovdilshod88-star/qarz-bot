@@ -225,31 +225,34 @@ async def process_user_shop_phone(message: Message, state: FSMContext, bot: Bot)
     user_id = message.from_user.id
     user_full_name = message.from_user.full_name
     
-    shop_id = await db.create_shop(data['shop_name'], user_id, phone, days=30)
-    await state.clear()
-    
-    welcome_msg = (
-        f"🎉 <b>Tabriklaymiz, {user_full_name}!</b>\n\n"
-        f"🏪 <b>{data['shop_name']}</b> do'koningiz muvaffaqiyatli ochildi!\n"
-        f"🎁 Sizga <b>30 KUNLIK BEPUL SINOV MUDDATI</b> berildi.\n\n"
-        f"Endi do'kon QR kodini chiqarib osib qo'yishingiz, qarzlarni yozishingiz va to'lovlarni qabul qilishingiz mumkin."
-    )
-    is_sa = user_id in config.SUPER_ADMIN_IDS
-    await message.answer(welcome_msg, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=30))
-    
-    for sa_id in config.SUPER_ADMIN_IDS:
-        try:
-            sa_notify = (
-                f"🔔 <b>Yangi do'kon ochildi (Trial)!</b>\n\n"
-                f"🏪 Do'kon: <b>{data['shop_name']}</b> (ID: {shop_id})\n"
-                f"👤 Egasi: <b>{user_full_name}</b>\n"
-                f"🆔 Telegram ID: <code>{user_id}</code>\n"
-                f"📞 Tel: {phone or 'Kiritilmadi'}\n"
-                f"⏳ Muddat: 30 kun berildi."
-            )
-            await bot.send_message(chat_id=sa_id, text=sa_notify, parse_mode="HTML")
-        except Exception:
-            pass
+    try:
+        shop_id = await db.create_shop(data.get('shop_name', 'Yangi do\'kon'), user_id, phone, days=30)
+        await state.clear()
+        
+        welcome_msg = (
+            f"🎉 <b>Tabriklaymiz, {user_full_name}!</b>\n\n"
+            f"🏪 <b>{data.get('shop_name', 'Do''kon')}</b> muvaffaqiyatli ochildi!\n"
+            f"🎁 Sizga <b>30 KUNLIK BEPUL SINOV MUDDATI</b> berildi.\n\n"
+            f"Endi do'kon QR kodini chiqarib osib qo'yishingiz, qarzlarni yozishingiz va to'lovlarni qabul qilishingiz mumkin."
+        )
+        is_sa = user_id in config.SUPER_ADMIN_IDS
+        await message.answer(welcome_msg, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=30))
+        
+        for sa_id in config.SUPER_ADMIN_IDS:
+            try:
+                sa_notify = (
+                    f"🔔 <b>Yangi do'kon ochildi (Trial)!</b>\n\n"
+                    f"🏪 Do'kon: <b>{data.get('shop_name', '')}</b> (ID: {shop_id})\n"
+                    f"👤 Egasi: <b>{user_full_name}</b>\n"
+                    f"🆔 Telegram ID: <code>{user_id}</code>\n"
+                    f"📞 Tel: {phone or 'Kiritilmadi'}\n"
+                    f"⏳ Muddat: 30 kun berildi."
+                )
+                await bot.send_message(chat_id=sa_id, text=sa_notify, parse_mode="HTML")
+            except Exception:
+                pass
+    except Exception as e:
+        await message.answer(f"⚠️ Do'kon ochishda xatolik yuz berdi: {e}\nIltimos, /start bosib qaytadan urinib ko'ring.")
 
 # ==================== MIJOZ TUGMALARI ====================
 
