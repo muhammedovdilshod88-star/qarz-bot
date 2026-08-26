@@ -11,9 +11,33 @@ async def init_db():
                 admin_id INTEGER NOT NULL,
                 phone TEXT,
                 is_active INTEGER DEFAULT 1,
+                subscription_until TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        await db.commit()
+        
+        # PRAGMA orqali shops ustunlarini tekshirish va xatosiz qo'shish
+        async with db.execute("PRAGMA table_info(shops)") as cursor:
+            columns = [row[1] for row in await cursor.fetchall()]
+            
+        if "subscription_until" not in columns:
+            try:
+                await db.execute("ALTER TABLE shops ADD COLUMN subscription_until TIMESTAMP")
+                await db.commit()
+            except Exception:
+                pass
+
+        # Mavjud do'konlarga 30 kunlik muddat berish (agar bo'sh bo'lsa)
+        try:
+            await db.execute("""
+                UPDATE shops 
+                SET subscription_until = datetime('now', '+30 days') 
+                WHERE subscription_until IS NULL
+            """)
+            await db.commit()
+        except Exception:
+            pass
         
         await db.execute("""
             CREATE TABLE IF NOT EXISTS shop_admins (
@@ -82,6 +106,13 @@ async def init_db():
 
 async def create_shop(name: str, admin_id: int, phone: str = None, days: int = 30) -> int:
     async with aiosqlite.connect(DB_PATH) as db:
+        # Xavfsizlik: ustun borligini kafolatlash
+        try:
+            await db.execute("ALTER TABLE shops ADD COLUMN subscription_until TIMESTAMP")
+            await db.commit()
+        except Exception:
+            pass
+
         cursor = await db.execute(
             "INSERT INTO shops (name, admin_id, phone, is_active, subscription_until) VALUES (?, ?, ?, 1, datetime('now', ?))",
             (name, admin_id, phone, f"+{days} days")
