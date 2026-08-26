@@ -362,6 +362,19 @@ async def show_my_debts(message: Message, bot: Bot):
     text += f"\n📊 <b>Jami umumiy qarzingiz: {format_money(total_all)}</b>"
     await message.answer(text, parse_mode="HTML", reply_markup=get_client_main_kb())
 
+@router.message(F.text == "📲 Ekranga znachok qilish")
+async def show_client_homescreen_guide(message: Message):
+    text = (
+        "📲 <b>Botni telefon ekraniga Znachok (Ilova) qilish qo'llanmasi:</b>\n\n"
+        "Buni 1 marta qilib qo'ysangiz, Telegram ichidan qidirib o'tirmaysiz — telefoningiz ish stolida xuddi ilovadek turadi!\n\n"
+        "👉 <b>Qanday qilinadi (3 ta oddiy qadam):</b>\n"
+        "1️⃣ Yuqoridagi <b>«Qarz daftari bot»</b> nomiga (profiliga) bosing.\n"
+        "2️⃣ O'ng burchakdagi <b>3 ta nuqta (⋮)</b> ni bosing.\n"
+        "3️⃣ <b>«Добавить на главный экран»</b> (yoki <i>«Add to Home screen» / «Asosiy ekranga qo'shish»</i>) ni bosing!\n\n"
+        "🎉 <b>Tayyor!</b> Endi telefoningiz ekranidan 1 marta bosib to'g'ridan-to'g'ri qarz daftaringizni ko'rasiz."
+    )
+    await message.answer(text, parse_mode="HTML")
+
 @router.message(F.text == "📜 Xaridlar tarixi")
 async def show_my_history(message: Message):
     user_id = message.from_user.id

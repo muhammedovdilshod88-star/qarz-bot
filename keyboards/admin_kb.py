@@ -10,6 +10,7 @@ def get_admin_main_kb(is_superadmin: bool = False, days_left: int = 30) -> Reply
         [KeyboardButton(text="🔍 Qidirish"), KeyboardButton(text="📊 Statistika")],
         [KeyboardButton(text="📲 Do'kon QR kodi"), KeyboardButton(text="👥 Sheriklar (Adminlar)")],
         [KeyboardButton(text="⚙️ Do'kon nomi"), KeyboardButton(text=f"⏳ Obuna: {days_left} kun qoldi")],
+        [KeyboardButton(text="📲 Ekranga znachok qilish")],
     ]
     if is_superadmin:
         buttons.append([KeyboardButton(text="👑 Super Admin Paneli")])

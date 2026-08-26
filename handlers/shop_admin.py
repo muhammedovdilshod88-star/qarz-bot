@@ -197,6 +197,19 @@ async def show_subscription_info(message: Message, state: FSMContext):
     )
     await message.answer(text, parse_mode="HTML", reply_markup=get_subscription_kb())
 
+@router.message(StateFilter('*'), F.text == "📲 Ekranga znachok qilish")
+async def show_add_to_homescreen_guide(message: Message):
+    text = (
+        "📲 <b>Botni telefon ekraniga Znachok (Ilova) qilish qo'llanmasi:</b>\n\n"
+        "Buni 1 marta qilib qo'ysangiz, Telegram ichidan qidirib o'tirmaysiz — telefoningiz ish stolida xuddi ilovadek turadi!\n\n"
+        "👉 <b>Qanday qilinadi (3 ta oddiy qadam):</b>\n"
+        "1️⃣ Yuqoridagi <b>«Qarz daftari bot»</b> nomiga (profiliga) bosing.\n"
+        "2️⃣ O'ng burchakdagi <b>3 ta nuqta (⋮)</b> ni bosing.\n"
+        "3️⃣ <b>«Добавить на главный экран»</b> (yoki <i>«Add to Home screen» / «Asosiy ekranga qo'shish»</i>) ni bosing!\n\n"
+        "🎉 <b>Tayyor!</b> Endi telefoningiz ekranidan 1 marta bosib to'g'ridan-to'g'ri qarz daftariga kirasiz."
+    )
+    await message.answer(text, parse_mode="HTML")
+
 @router.message(StateFilter('*'), F.text == "📲 Do'kon QR kodi")
 async def send_shop_qr_code(message: Message, bot: Bot, state: FSMContext):
     await state.clear()
