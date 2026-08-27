@@ -33,6 +33,35 @@ async def start_web_server():
     await site.start()
     logger.info(f"Health check server {port}-portda ishga tushdi.")
 
+from datetime import datetime
+from utils.excel import generate_full_platform_excel
+from aiogram.types import BufferedInputFile
+
+async def daily_backup_scheduler(bot: Bot):
+    """Har 24 soatda Super Adminga avtomatik to'liq Excel zaxira yuborish"""
+    while True:
+        try:
+            # Har 24 soat kutish (86400 soniya)
+            await asyncio.sleep(86400)
+            bio = await generate_full_platform_excel()
+            date_str = datetime.now().strftime("%Y-%m-%d")
+            filename = f"Avto_Backup_{date_str}.xlsx"
+            doc = BufferedInputFile(bio.getvalue(), filename=filename)
+            
+            for sa_id in config.SUPER_ADMIN_IDS:
+                try:
+                    await bot.send_document(
+                        chat_id=sa_id,
+                        document=doc,
+                        caption=f"🛡 <b>Avtomatik 24-soatlik Zaxira (Backup)</b>\n📅 Sana: <code>{date_str}</code>\nBarcha ma'lumotlar xavfsiz saqlangan.",
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error(f"Backup scheduler xatosi: {e}")
+            await asyncio.sleep(60)
+
 async def main():
     logger.info("Ma'lumotlar bazasi initsializatsiya qilinmoqda...")
     await db.init_db()
@@ -48,6 +77,9 @@ async def main():
     dp.include_router(superadmin.router)
     dp.include_router(shop_admin.router)
     dp.include_router(client.router)
+
+    # Avtomatik kunlik backup vazifasini fonda yoqish
+    asyncio.create_task(daily_backup_scheduler(bot))
 
     bot_info = await bot.get_me()
     logger.info(f"Bot ishga tushdi: @{bot_info.username} (ID: {bot_info.id})")

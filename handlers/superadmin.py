@@ -328,6 +328,49 @@ async def process_new_shop_phone(message: Message, state: FSMContext):
     except Exception as e:
         await message.answer(f"⚠️ Xatolik yuz berdi: {e}\nIltimos, qaytadan urinib ko'ring yoki /cancel bosing.")
 
+from utils.excel import generate_shop_excel, generate_full_platform_excel
+from aiogram.types import BufferedInputFile
+
+@router.callback_query(F.data.startswith("sa_excel_"))
+async def export_single_shop_excel(call: CallbackQuery):
+    if not is_super_admin(call.from_user.id):
+        return
+    shop_id = int(call.data.split("_")[2])
+    shop = await db.get_shop_by_id(shop_id)
+    if not shop:
+        await call.answer("Do'kon topilmadi!", show_alert=True)
+        return
+        
+    await call.answer("Excel hisobot tayyorlanmoqda...")
+    bio = await generate_shop_excel(shop_id)
+    filename = f"qarz_{shop['name'].replace(' ', '_')}_{shop_id}.xlsx"
+    doc = BufferedInputFile(bio.getvalue(), filename=filename)
+    
+    caption = (
+        f"📊 <b>{shop['name']} — To'liq Excel Hisoboti</b>\n\n"
+        f"Ushbu faylda do'konning barcha qarzdor mijozlari, ularning telefonlari va barcha amalga oshirilgan savdolar tarixi to'liq jamlangan."
+    )
+    await call.message.answer_document(document=doc, caption=caption, parse_mode="HTML")
+
+@router.message(F.text == "📥 Barcha bazani Excelda yuklash")
+async def export_all_platform_excel(message: Message):
+    if not is_super_admin(message.from_user.id):
+        return
+    await message.answer("⏳ Barcha do'konlar va mijozlar ma'lumotlari jamlanmoqda, kuting...")
+    
+    bio = await generate_full_platform_excel()
+    from datetime import datetime
+    date_str = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    filename = f"Qarz_Daftari_Backup_{date_str}.xlsx"
+    doc = BufferedInputFile(bio.getvalue(), filename=filename)
+    
+    caption = (
+        f"🛡 <b>Qarz Daftari Platformasi — To'liq Zaxira Fayli (Backup)</b>\n\n"
+        f"📅 Sana: <code>{date_str}</code>\n"
+        f"Barcha do'konlar, ularning egalari, qarzdor mijozlar va hisob-kitoblar ushbu faylda xavfsiz saqlangan."
+    )
+    await message.answer_document(document=doc, caption=caption, parse_mode="HTML")
+
 @router.message(F.text == "📊 Platforma statistikasi")
 async def show_platform_stats(message: Message):
     if not is_super_admin(message.from_user.id):

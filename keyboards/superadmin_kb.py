@@ -4,7 +4,8 @@ def get_superadmin_main_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🏪 Barcha do'konlar"), KeyboardButton(text="➕ Yangi do'kon qo'shish")],
-            [KeyboardButton(text="📊 Platforma statistikasi"), KeyboardButton(text="🔙 Asosiy menyu")]
+            [KeyboardButton(text="📊 Platforma statistikasi"), KeyboardButton(text="📥 Barcha bazani Excelda yuklash")],
+            [KeyboardButton(text="🔙 Asosiy menyu")]
         ],
         resize_keyboard=True
     )
@@ -67,6 +68,7 @@ def get_shop_manage_kb(shop_id: int, is_active: bool) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="➕ 1 yil (+365 kun)", callback_data=f"sa_ext_{shop_id}_365"),
                 InlineKeyboardButton(text="🔄 Adminni o'zgartirish", callback_data=f"sa_chadmin_{shop_id}")
             ],
+            [InlineKeyboardButton(text="📥 Do'kon Excel hisoboti", callback_data=f"sa_excel_{shop_id}")],
             [InlineKeyboardButton(text=toggle_text, callback_data=f"sa_toggle_{shop_id}")],
             [InlineKeyboardButton(text="🗑 Do'konni o'chirish", callback_data=f"sa_del_{shop_id}")],
             [InlineKeyboardButton(text="🔙 Orqaga", callback_data="sa_back_shops")]
