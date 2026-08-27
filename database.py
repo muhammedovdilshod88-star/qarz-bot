@@ -437,6 +437,55 @@ async def list_all_shops():
                 rows = await cursor.fetchall()
                 return [dict(r) for r in rows]
 
+async def get_detailed_shops_analysis():
+    """Super Admin uchun barcha do'konlarni mijozlar soni va faolligi bilan tahlil qilish"""
+    if USE_POSTGRES:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT 
+                    s.id,
+                    s.name,
+                    s.admin_id,
+                    s.phone,
+                    s.is_active,
+                    s.subscription_until,
+                    EXTRACT(DAY FROM (s.subscription_until - NOW()))::INT as days_left,
+                    COUNT(DISTINCT c.id) as customers_count,
+                    COUNT(DISTINCT t.id) as transactions_count,
+                    COALESCE(SUM(CASE WHEN c.balance > 0 THEN c.balance ELSE 0 END), 0) as total_debt
+                FROM shops s
+                LEFT JOIN customers c ON s.id = c.shop_id
+                LEFT JOIN transactions t ON s.id = t.shop_id
+                GROUP BY s.id, s.name, s.admin_id, s.phone, s.is_active, s.subscription_until
+                ORDER BY customers_count DESC, transactions_count DESC, s.id DESC
+            """)
+            return [dict(r) for r in rows]
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            query = """
+                SELECT 
+                    s.id,
+                    s.name,
+                    s.admin_id,
+                    s.phone,
+                    s.is_active,
+                    s.subscription_until,
+                    CAST(JULIANDAY(s.subscription_until) - JULIANDAY('now') AS INTEGER) as days_left,
+                    COUNT(DISTINCT c.id) as customers_count,
+                    COUNT(DISTINCT t.id) as transactions_count,
+                    COALESCE(SUM(CASE WHEN c.balance > 0 THEN c.balance ELSE 0 END), 0) as total_debt
+                FROM shops s
+                LEFT JOIN customers c ON s.id = c.shop_id
+                LEFT JOIN transactions t ON s.id = t.shop_id
+                GROUP BY s.id, s.name, s.admin_id, s.phone, s.is_active, s.subscription_until
+                ORDER BY customers_count DESC, transactions_count DESC, s.id DESC
+            """
+            async with db.execute(query) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(r) for r in rows]
+
 async def update_shop_name(shop_id: int, new_name: str):
     if USE_POSTGRES:
         pool = await get_db_pool()

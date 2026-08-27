@@ -50,13 +50,70 @@ async def back_to_main_panel(message: Message):
 async def list_shops(message: Message):
     if not is_super_admin(message.from_user.id):
         return
-    shops = await db.list_all_shops()
+    shops = await db.get_detailed_shops_analysis()
     if not shops:
         await message.answer("Hozircha tizimda do'konlar mavjud emas.")
         return
     
-    kb = get_shops_list_kb(shops)
-    await message.answer("🏪 <b>Mavjud do'konlar:</b>\nBoshqarish uchun do'konni tanlang:", reply_markup=kb, parse_mode="HTML")
+    active_count = sum(1 for s in shops if s.get('customers_count', 0) > 0)
+    passive_count = sum(1 for s in shops if s.get('customers_count', 0) == 0)
+    
+    text = (
+        f"🏪 <b>Barcha Do'konlar Tahlili:</b>\n"
+        f"• Jami do'konlar: <b>{len(shops)} ta</b>\n"
+        f"• 🟢 Faol (Mijozli): <b>{active_count} ta</b>\n"
+        f"• 🔴 Passiv (0 mijoz): <b>{passive_count} ta</b>\n\n"
+        f"<i>Boshqarish uchun do'konni tanlang:</i>"
+    )
+    kb = get_shops_list_kb(shops, filter_type="all")
+    await message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+@router.callback_query(F.data.startswith("sa_filter_"))
+async def filter_shops_cb(call: CallbackQuery):
+    if not is_super_admin(call.from_user.id):
+        return
+    filter_type = call.data.replace("sa_filter_", "")
+    shops = await db.get_detailed_shops_analysis()
+    
+    if filter_type == "active":
+        filtered = [s for s in shops if s.get('customers_count', 0) > 0]
+        title = "🟢 <b>Faol Do'konlar (Mijozlar ulangan):</b>"
+    elif filter_type == "passive":
+        filtered = [s for s in shops if s.get('customers_count', 0) == 0]
+        title = "🔴 <b>Passiv Do'konlar (0 ta mijoz):</b>"
+    elif filter_type == "expiring":
+        filtered = [s for s in shops if (s.get('days_left') is not None and s.get('days_left') <= 7)]
+        title = "⏳ <b>Obunasi 7 kundan kam qolgan do'konlar:</b>"
+    else:
+        filtered = shops
+        title = "📋 <b>Barcha Do'konlar:</b>"
+        
+    text = f"{title}\nTopildi: <b>{len(filtered)} ta</b>\n\n<i>Boshqarish uchun do'konni tanlang:</i>"
+    kb = get_shops_list_kb(filtered, filter_type=filter_type)
+    try:
+        await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        pass
+    await call.answer()
+
+@router.callback_query(F.data == "sa_back_shops")
+async def back_to_shops_list(call: CallbackQuery):
+    if not is_super_admin(call.from_user.id):
+        return
+    shops = await db.get_detailed_shops_analysis()
+    active_count = sum(1 for s in shops if s.get('customers_count', 0) > 0)
+    passive_count = sum(1 for s in shops if s.get('customers_count', 0) == 0)
+    
+    text = (
+        f"🏪 <b>Barcha Do'konlar Tahlili:</b>\n"
+        f"• Jami do'konlar: <b>{len(shops)} ta</b>\n"
+        f"• 🟢 Faol (Mijozli): <b>{active_count} ta</b>\n"
+        f"• 🔴 Passiv (0 mijoz): <b>{passive_count} ta</b>\n\n"
+        f"<i>Boshqarish uchun do'konni tanlang:</i>"
+    )
+    kb = get_shops_list_kb(shops, filter_type="all")
+    await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    await call.answer()
 
 @router.callback_query(F.data.startswith("sa_shop_"))
 async def manage_shop_detail(call: CallbackQuery):
@@ -69,17 +126,20 @@ async def manage_shop_detail(call: CallbackQuery):
         return
     
     stats = await db.get_shop_statistics(shop_id)
+    is_valid, days_left, exp_date = await db.check_shop_subscription(shop_id)
     status_text = "🟢 Faol" if shop['is_active'] else "🔴 Bloklangan"
+    exp_str = str(exp_date)[:10] if exp_date else "Noma'lum"
     
     text = (
         f"🏪 <b>Do'kon:</b> {shop['name']}\n"
         f"🆔 ID: {shop['id']}\n"
         f"👤 <b>Admin Telegram ID:</b> <code>{shop['admin_id']}</code>\n"
-        f"📞 <b>Telefon:</b> {shop['phone'] or 'Kiritilmagan'}\n"
-        f"⚡ <b>Holat:</b> {status_text}\n\n"
+        f"📞 <b>Telefon:</b> <code>{shop['phone'] or 'Kiritilmagan'}</code>\n"
+        f"⚡ <b>Holat:</b> {status_text}\n"
+        f"⏳ <b>Obuna:</b> {days_left} kun qoldi (gacha: <code>{exp_str}</code>)\n\n"
         f"📊 <b>Statistika:</b>\n"
-        f"• Mijozlar: {stats['total_customers']} ta\n"
-        f"• Jami nasiya: {format_money(stats['total_debt'])}\n"
+        f"• 👥 Ulangan mijozlar: <b>{stats['total_customers']} ta</b>\n"
+        f"• 💰 Jami nasiya qarzlari: <b>{format_money(stats['total_debt'])}</b>\n"
     )
     await call.message.edit_text(text, reply_markup=get_shop_manage_kb(shop_id, shop['is_active']), parse_mode="HTML")
     await call.answer()
@@ -269,17 +329,47 @@ async def process_new_shop_phone(message: Message, state: FSMContext):
         await message.answer(f"⚠️ Xatolik yuz berdi: {e}\nIltimos, qaytadan urinib ko'ring yoki /cancel bosing.")
 
 @router.message(F.text == "📊 Platforma statistikasi")
-async def platform_stats(message: Message):
+async def show_platform_stats(message: Message):
     if not is_super_admin(message.from_user.id):
         return
-    shops = await db.list_all_shops()
-    total_shops = len(shops)
-    active_shops = sum(1 for s in shops if s['is_active'])
+    shops = await db.get_detailed_shops_analysis()
     
+    total_shops = len(shops)
+    active_shops = [s for s in shops if s.get('customers_count', 0) > 0]
+    passive_shops = [s for s in shops if s.get('customers_count', 0) == 0]
+    
+    total_customers_all = sum(s.get('customers_count', 0) for s in shops)
+    total_debt_all = sum(s.get('total_debt', 0.0) for s in shops)
+    
+    # TOP-5 Aktiv do'konlar
+    top_active_text = ""
+    for idx, s in enumerate(active_shops[:5], 1):
+        top_active_text += f"{idx}. 🏪 <b>{s['name']}</b> — 👥 {s['customers_count']} mijoz | 💰 {format_money(s['total_debt'])}\n"
+    if not top_active_text:
+        top_active_text = "<i>(Hozircha mijozli faol do'konlar yo'q)</i>\n"
+        
+    # Passiv do'konlar ro'yxati (telefonlari bilan aloqa qilish uchun)
+    passive_text = ""
+    for idx, s in enumerate(passive_shops[:5], 1):
+        phone = s['phone'] or "Tel yo'q"
+        passive_text += f"{idx}. 🏪 <b>{s['name']}</b> — 📞 <code>{phone}</code>\n"
+    if not passive_text:
+        passive_text = "<i>(Barcha do'konlar faol!)</i>\n"
+        
     text = (
-        f"📊 <b>Platforma Umumiy Statistikasi</b>\n\n"
-        f"🏪 Jami do'konlar: <b>{total_shops} ta</b>\n"
-        f"🟢 Faol do'konlar: <b>{active_shops} ta</b>\n"
-        f"🔴 Nofaol do'konlar: <b>{total_shops - active_shops} ta</b>\n"
+        f"📊 <b>Qarz Daftari Platformasi Umumiy Statistikasi:</b>\n"
+        f"────────────────────\n"
+        f"🏪 <b>Do'konlar holati:</b>\n"
+        f"• Jami ochilgan do'konlar: <b>{total_shops} ta</b>\n"
+        f"• 🟢 <b>Faol (Mijozli) do'konlar:</b> <b>{len(active_shops)} ta</b>\n"
+        f"• 🔴 <b>Passiv (0 mijoz) do'konlar:</b> <b>{len(passive_shops)} ta</b>\n\n"
+        f"👥 <b>Umumiy foydalanuvchilar:</b>\n"
+        f"• Platformadagi jami mijozlar: <b>{total_customers_all} nafar</b>\n"
+        f"• Do'konlarning jami nasiya balansi: <b>{format_money(total_debt_all)}</b>\n\n"
+        f"🏆 <b>ENG FAOL DO'KONLAR (TOP):</b>\n"
+        f"{top_active_text}\n"
+        f"⚠️ <b>ALOQAGA CHIQISH KERAK (PASSIVLAR):</b>\n"
+        f"{passive_text}\n"
+        f"💡 <i>Passiv do'konchilarga telefon qilib, QR kodni osishni va qarz yozishni o'rgating!</i>"
     )
-    await message.answer(text, parse_mode="HTML")
+    await message.answer(text, parse_mode="HTML", reply_markup=get_superadmin_main_kb())
