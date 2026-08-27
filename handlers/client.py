@@ -107,8 +107,34 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
     # 1. Super Admin tekshiruvi
     is_sa = (user_id in config.SUPER_ADMIN_IDS)
     
-    # 2. Agar sherik (adminlik) taklif havolasi orqali kirayotgan bo'lsa (/start staff_TOKEN)
+    # 2. Agar reklama QR kodi orqali yangi do'kon ochishga kirayotgan bo'lsa (/start new_shop yoki promo)
     args = command.args
+    if args in ["new_shop", "promo", "flyer"]:
+        existing = await db.get_shop_by_admin(user_id)
+        if existing:
+            is_valid, days_left, _ = await db.check_shop_subscription(existing['id'])
+            await message.answer(
+                f"Assalomu alaykum, <b>{user_full_name}</b>!\n"
+                f"Sizda allaqachon <b>{existing['name']}</b> do'koni mavjud.\n"
+                f"⏳ Obuna muddati: <b>{days_left} kun</b>.",
+                parse_mode="HTML",
+                reply_markup=get_admin_main_kb(is_sa, days_left=days_left)
+            )
+            return
+        
+        # Yangi do'kon ochish savolini to'g'ridan-to'g'ri boshlash
+        await state.set_state(UserRegisterShop.shop_name)
+        promo_start = (
+            f"👋 Assalomu alaykum, <b>{user_full_name}</b>!\n\n"
+            f"🎁 <b>Qarz Daftari Botiga xush kelibsiz!</b>\n"
+            f"Sizga <b>1 OY (30 KUN) MUTLAQO BEPUL</b> sinov muddati taqdim etiladi.\n\n"
+            f"🏪 <b>1-qadam: Do'koningiz nomini kiriting:</b>\n"
+            f"<i>(Masalan: Omad Oziq-ovqat, Baraka Market)</i>"
+        )
+        await message.answer(promo_start, parse_mode="HTML", reply_markup=get_cancel_kb())
+        return
+
+    # 3. Agar sherik (adminlik) taklif havolasi orqali kirayotgan bo'lsa (/start staff_TOKEN)
     if args and args.startswith("staff_"):
         token = args.replace("staff_", "")
         shop, msg = await db.use_staff_invite(token, user_id, user_full_name)
@@ -308,14 +334,31 @@ async def process_user_shop_phone(message: Message, state: FSMContext, bot: Bot)
         shop_id = await db.create_shop(data.get('shop_name', 'Yangi do\'kon'), user_id, phone, days=30)
         await state.clear()
         
+        shop_name = data.get('shop_name', 'Do\'kon')
         welcome_msg = (
             f"🎉 <b>Tabriklaymiz, {user_full_name}!</b>\n\n"
-            f"🏪 <b>{data.get('shop_name', 'Do''kon')}</b> muvaffaqiyatli ochildi!\n"
+            f"🏪 <b>{shop_name}</b> do'koningiz muvaffaqiyatli ochildi!\n"
             f"🎁 Sizga <b>30 KUNLIK BEPUL SINOV MUDDATI</b> berildi.\n\n"
-            f"Endi do'kon QR kodini chiqarib osib qo'yishingiz, qarzlarni yozishingiz va to'lovlarni qabul qilishingiz mumkin."
+            f"Boshqaruv menyusi quyida ochildi 👇"
         )
         is_sa = user_id in config.SUPER_ADMIN_IDS
         await message.answer(welcome_msg, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=30))
+        
+        # Mijozlar uchun maxsus QR kodni rasm qilib chiqarib berish
+        from utils.qr import generate_shop_qr
+        from aiogram.types import BufferedInputFile
+        bot_info = await bot.get_me()
+        qr_bio = generate_shop_qr(bot_info.username, shop_id)
+        
+        qr_caption = (
+            f"📲 <b>{shop_name} — Mijozlaringiz uchun maxsus QR Kod!</b>\n\n"
+            f"📌 <b>Buni chop etib peshtaxtaga yoki devorga osib qo'ying:</b>\n"
+            f"Xaridorlaringiz bu kodni telefon kamerasida skaner qilsa, "
+            f"to'g'ridan-to'g'ri sizning do'koningiz <b>Mijozi</b> bo'lib ulanadi va o'z qarzlarini ko'rib boradi!\n\n"
+            f"🔗 To'g'ridan-to'g'ri havola: https://t.me/{bot_info.username}?start=shop_{shop_id}"
+        )
+        photo_file = BufferedInputFile(qr_bio.getvalue(), filename=f"shop_{shop_id}_qr.png")
+        await message.answer_photo(photo=photo_file, caption=qr_caption, parse_mode="HTML")
         
         for sa_id in config.SUPER_ADMIN_IDS:
             try:
