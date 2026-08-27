@@ -52,9 +52,15 @@ async def main():
     bot_info = await bot.get_me()
     logger.info(f"Bot ishga tushdi: @{bot_info.username} (ID: {bot_info.id})")
 
-    # Eski kutilmagan xabarlarni o'chirib, pollingni boshlash
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+    # Cheksiz qayta ulanish zanjiri (Uzilib qolsa ham avtomatik qayta ulanadi)
+    while True:
+        try:
+            logger.info("Polling boshlanmoqda...")
+            await bot.delete_webhook(drop_pending_updates=True)
+            await dp.start_polling(bot, handle_signals=False)
+        except Exception as e:
+            logger.error(f"Pollingda xatolik yuz berdi: {e}. 5 soniyadan so'ng qayta ulanmoqda...")
+            await asyncio.sleep(5)
 
 if __name__ == "__main__":
     try:
