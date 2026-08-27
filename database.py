@@ -734,3 +734,31 @@ async def get_shop_statistics(shop_id: int, period: str = 'all') -> dict:
                 'top_debtors': top_debtors,
                 'period': period
             }
+
+async def list_shop_customers(shop_id: int, sort_by_debt: bool = True):
+    return await get_customers_by_shop(shop_id)
+
+async def list_shop_admins(shop_id: int):
+    return await get_shop_staff(shop_id)
+
+async def delete_shop_staff(staff_id: int, shop_id: int):
+    return await remove_staff_member(shop_id, staff_id)
+
+async def get_detailed_shop_statistics(shop_id: int, period: str = 'all') -> dict:
+    stats = await get_shop_statistics(shop_id, period)
+    if USE_POSTGRES:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            indebted = await conn.fetchval("SELECT COUNT(*) FROM customers WHERE shop_id = $1 AND balance > 0", shop_id) or 0
+            clear = await conn.fetchval("SELECT COUNT(*) FROM customers WHERE shop_id = $1 AND balance <= 0", shop_id) or 0
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT COUNT(*) FROM customers WHERE shop_id = ? AND balance > 0", (shop_id,)) as cur:
+                indebted = (await cur.fetchone())[0]
+            async with db.execute("SELECT COUNT(*) FROM customers WHERE shop_id = ? AND balance <= 0", (shop_id,)) as cur:
+                clear = (await cur.fetchone())[0]
+                
+    stats['indebted_customers'] = indebted
+    stats['clear_customers'] = clear
+    return stats
+
