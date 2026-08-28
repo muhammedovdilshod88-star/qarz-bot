@@ -367,7 +367,7 @@ async def view_customer_detail(call: CallbackQuery, bot: Bot):
         bot_username=bot_info.username, 
         shop_id=customer['shop_id'], 
         phone=customer['phone'],
-        has_telegram=bool(customer['telegram_id']),
+        telegram_id=customer.get('telegram_id'),
         due_date_str=due_str
     )
     await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")

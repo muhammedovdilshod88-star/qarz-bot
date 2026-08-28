@@ -124,7 +124,7 @@ def get_due_date_select_kb(customer_id: int) -> InlineKeyboardMarkup:
         ]
     )
 
-def get_customer_actions_kb(customer_id: int, bot_username: str, shop_id: int, phone: str = None, has_telegram: bool = False, due_date_str: str = None) -> InlineKeyboardMarkup:
+def get_customer_actions_kb(customer_id: int, bot_username: str, shop_id: int, phone: str = None, telegram_id: int = None, due_date_str: str = None) -> InlineKeyboardMarkup:
     from urllib.parse import quote
     customer_link = f"https://t.me/{bot_username}?start=c_{customer_id}"
     share_url = f"https://t.me/share/url?url={quote(customer_link)}&text={quote('Assalomu alaykum! Do‘konimizdagi qarz va nasiya hisobingizni kuzatib borish uchun ushbu havolani bosing:')}"
@@ -144,18 +144,21 @@ def get_customer_actions_kb(customer_id: int, bot_username: str, shop_id: int, p
         ]
     ]
     
-    extra_row = []
-    if phone:
-        extra_row.append(InlineKeyboardButton(text="📲 SMS shabloni", callback_data=f"sms_{customer_id}"))
+    # SMS va Telegram muloqot tugmalari
+    comm_row = [
+        InlineKeyboardButton(text="📲 SMS shabloni", callback_data=f"sms_{customer_id}")
+    ]
+    if telegram_id:
+        comm_row.append(InlineKeyboardButton(text="💬 Telegramiga yozish", url=f"tg://user?id={telegram_id}"))
+    elif phone:
         clean_phone = "".join([c for c in phone if c.isdigit()])
         if clean_phone:
-            extra_row.append(InlineKeyboardButton(text="💬 Telegrami", url=f"https://t.me/+{clean_phone}"))
+            comm_row.append(InlineKeyboardButton(text="💬 Telegrami", url=f"https://t.me/+{clean_phone}"))
             
-    if extra_row:
-        rows.append(extra_row)
+    rows.append(comm_row)
             
     rows.append([
-        InlineKeyboardButton(text="🗑 O'chirish", callback_data=f"del_cust_{customer_id}"),
+        InlineKeyboardButton(text="🗑 Mijozni o'chirish", callback_data=f"del_cust_{customer_id}"),
         InlineKeyboardButton(text="🔙 Orqaga", callback_data="back_to_list")
     ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
