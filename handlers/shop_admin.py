@@ -787,7 +787,7 @@ async def process_payment_amount(message: Message, state: FSMContext, bot: Bot):
 
 # ==================== QIDIRUV ====================
 
-@router.message(F.text == "🔍 Qidirish")
+@router.message(StateFilter('*'), F.text.in_(["🔍 Qidirish", "🔍 Qidiruv"]))
 async def search_customer_start(message: Message, state: FSMContext):
     shop = await db.get_shop_by_admin(message.from_user.id)
     if not shop:
