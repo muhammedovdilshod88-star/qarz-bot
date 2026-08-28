@@ -139,7 +139,7 @@ async def main():
 
     # Global xatoliklar ushlovchisi (Error Handler)
     @dp.error()
-    async def global_error_handler(event, bot: Bot):
+    async def global_error_handler(event):
         logger.error(f"Global xatolik: {event.exception}")
         err_msg = (
             f"⚠️ <b>DIQQAT: Botda xatolik yuz berdi!</b>\n\n"
