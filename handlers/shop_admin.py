@@ -143,7 +143,7 @@ async def back_to_admin_panel(call: CallbackQuery):
 
 # ==================== DO'KON MA'LUMOTLARI VA SOZLAMALAR ====================
 
-@router.message(StateFilter('*'), F.text == "⚙️ Do'kon nomi")
+@router.message(StateFilter('*'), F.text.in_(["⚙️ Daftar nomi", "⚙️ Do'kon nomi", "⚙️ Nomni o'zgartirish"]))
 async def edit_shop_name_start(message: Message, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
@@ -151,7 +151,7 @@ async def edit_shop_name_start(message: Message, state: FSMContext):
         return
     await state.set_state(AdminStates.change_shop_name)
     await message.answer(
-        f"Hozirgi do'kon nomi: <b>{shop['name']}</b>\n\nYangi nomni kiriting:",
+        f"Hozirgi nom: <b>{shop['name']}</b>\n\nYangi nomni kiriting:\n<i>(Masalan: Shaxsiy Qarz Daftari, Baraka Market, Usta Jamshid)</i>",
         parse_mode="HTML",
         reply_markup=get_cancel_kb()
     )
@@ -165,7 +165,7 @@ async def process_shop_name_change(message: Message, state: FSMContext):
         is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
         is_sa = message.from_user.id in config.SUPER_ADMIN_IDS
         await message.answer(
-            f"✅ Do'kon nomi muvaffaqiyatli o'zgartirildi: <b>{new_name}</b>",
+            f"✅ Nom muvaffaqiyatli o'zgartirildi: <b>{new_name}</b>",
             parse_mode="HTML",
             reply_markup=get_admin_main_kb(is_sa, days_left=days_left)
         )
@@ -210,14 +210,14 @@ async def show_add_to_homescreen_guide(message: Message):
     )
     await message.answer(text, parse_mode="HTML")
 
-@router.message(StateFilter('*'), F.text == "📥 Do'kon Excel hisoboti")
+@router.message(StateFilter('*'), F.text.in_(["📥 Excel hisoboti", "📥 Do'kon Excel hisoboti", "📥 Excel hisobot"]))
 async def send_shop_excel_report(message: Message, bot: Bot, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
     if not shop:
         return
         
-    await message.answer("⏳ <i>Do'koningiz hisoboti Excel formatida tayyorlanmoqda...</i>", parse_mode="HTML")
+    await message.answer("⏳ <i>Hisobotingiz Excel formatida tayyorlanmoqda...</i>", parse_mode="HTML")
     
     try:
         from utils.excel import generate_shop_excel
@@ -233,15 +233,15 @@ async def send_shop_excel_report(message: Message, bot: Bot, state: FSMContext):
             f"📊 <b>«{shop['name']}» — To'liq Excel hisoboti</b>\n\n"
             f"📅 Sana: <code>{date_str}</code>\n"
             f"📑 <b>Varaqlar:</b>\n"
-            f"1️⃣ <b>Mijozlar va Qarzlar:</b> Barcha mijozlaringiz va ularning qarz qoldiqlari\n"
-            f"2️⃣ <b>Amallar Tarixi:</b> Barcha savdo va to'lovlar tarixi\n\n"
+            f"1️⃣ <b>Qarzdorlar va Qarzlar:</b> Barcha qarzdorlaringiz va ularning qarz qoldiqlari\n"
+            f"2️⃣ <b>Amallar Tarixi:</b> Barcha amallar va to'lovlar tarixi\n\n"
             f"<i>(Kompyuter yoki telefonda Excel dasturida ochib ko'rishingiz mumkin)</i>"
         )
         await message.answer_document(document=doc, caption=caption, parse_mode="HTML")
     except Exception as e:
         await message.answer(f"⚠️ Hisobot tayyorlashda xatolik: {e}")
 
-@router.message(StateFilter('*'), F.text == "📲 Do'kon QR kodi")
+@router.message(StateFilter('*'), F.text.in_(["📲 Ulanish QR kodi", "📲 QR Kod (Ulanish)", "📲 Do'kon QR kodi"]))
 async def send_shop_qr_code(message: Message, bot: Bot, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
@@ -252,9 +252,9 @@ async def send_shop_qr_code(message: Message, bot: Bot, state: FSMContext):
     qr_bio = generate_shop_qr(bot_info.username, shop['id'])
     
     caption = (
-        f"🏪 <b>{shop['name']}</b> — Maxsus QR Kodi\n\n"
-        f"📌 Ushbu QR kodni chop etib do'kon peshtaxtasiga yoki devorga ilib qo'yishingiz mumkin.\n"
-        f"Mijozlar telefon kamerasi orqali skaner qilib botga ulanishadi va o'z qarzlarini ko'rib borishadi.\n\n"
+        f"📒 <b>«{shop['name']}»</b> — Maxsus Ulanish QR Kodi\n\n"
+        f"📌 Ushbu QR kodni qarzdorlaringizga berishingiz yoki osib qo'yishingiz mumkin.\n"
+        f"Ular telefon kamerasida skaner qilib botga ulanishadi va o'z qarzlarini ko'rib borishadi.\n\n"
         f"🔗 Havola: https://t.me/{bot_info.username}?start=shop_{shop['id']}"
     )
     
@@ -327,7 +327,7 @@ async def switch_stats_period(call: CallbackQuery):
 
 # ==================== MIJOZLARNI RO'YXATI VA FILTR ====================
 
-@router.message(StateFilter('*'), F.text == "📋 Mijozlar ro'yxati")
+@router.message(StateFilter('*'), F.text.in_(["📋 Qarzdorlar ro'yxati", "📋 Qarzdorlar", "📋 Mijozlar ro'yxati"]))
 async def list_customers_cmd(message: Message, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
@@ -336,11 +336,11 @@ async def list_customers_cmd(message: Message, state: FSMContext):
     
     customers = await db.list_shop_customers(shop['id'], sort_by_debt=True)
     if not customers:
-        await message.answer("Sizda hali mijozlar mavjud emas. '➕ Yangi mijoz' tugmasi orqali qo'shishingiz yoki QR kodni mijozlarga berishingiz mumkin.")
+        await message.answer("Sizda hali qarzdorlar mavjud emas. '➕ Yangi qo'shish' tugmasi orqali qo'shishingiz yoki QR kodni berishingiz mumkin.")
         return
     
     kb = get_customers_list_kb(customers, page=0)
-    await message.answer("📋 <b>Mijozlar ro'yxati</b> (Eng katta qarz egalari tepada):\nKerakli mijozni tanlang:", reply_markup=kb, parse_mode="HTML")
+    await message.answer("📋 <b>Qarzdorlar ro'yxati</b> (Eng katta qarz egalari tepada):\nKerakli shaxsni tanlang:", reply_markup=kb, parse_mode="HTML")
 
 @router.callback_query(F.data.startswith("page_"))
 async def paginate_customers(call: CallbackQuery):
@@ -561,7 +561,7 @@ async def delete_customer_callback(call: CallbackQuery):
 
 # ==================== YANGI MIJOZ QO'SHISH ====================
 
-@router.message(StateFilter('*'), F.text == "➕ Yangi mijoz")
+@router.message(StateFilter('*'), F.text.in_(["➕ Yangi qo'shish", "➕ Yangi mijoz", "➕ Qo'shish"]))
 async def add_customer_start(message: Message, state: FSMContext, bot: Bot):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
@@ -572,11 +572,11 @@ async def add_customer_start(message: Message, state: FSMContext, bot: Bot):
     qr_bio = generate_shop_qr(bot_info.username, shop['id'])
     
     caption = (
-        f"➕ <b>Yangi mijoz qo'shish usullari:</b>\n\n"
+        f"➕ <b>Yangi qarzdor qo'shish usullari:</b>\n\n"
         f"1️⃣ <b>📲 QR Kod orqali (Tavsiya etiladi):</b>\n"
-        f"Mijoz ushbu QR kodni telefon kamerasi bilan skaner qilsa, bir zumda do'koningizga ulanadi va hisobotlarni ko'rib boradi.\n\n"
+        f"Qarzdor ushbu QR kodni telefon kamerasi bilan skaner qilsa, bir zumda daftaringizga ulanadi va hisobotlarni ko'rib boradi.\n\n"
         f"2️⃣ <b>✍️ Qo'lda kiritish:</b>\n"
-        f"Agar mijozning telefoni bo'lmasa yoki hozir do'konda bo'lmasa, quyidagi tugmani bosib uning Ism va telefonini kiritib qo'yishingiz mumkin."
+        f"Agar qarzdorning telefoni bo'lmasa yoki hozir oldingizda bo'lmasa, quyidagi tugmani bosib uning Ism va telefonini kiritib qo'yishingiz mumkin."
     )
     
     kb = get_add_customer_menu_kb(bot_info.username, shop['id'])
