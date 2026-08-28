@@ -62,6 +62,30 @@ async def daily_backup_scheduler(bot: Bot):
             logger.error(f"Backup scheduler xatosi: {e}")
             await asyncio.sleep(60)
 
+async def due_reminder_scheduler(bot: Bot):
+    """Muddati yetib kelgan qarzdorlarga avtomatik muloyim eslatma jo'natish"""
+    while True:
+        try:
+            # Har 12 soatda bir marta tekshirish (43200 soniya)
+            await asyncio.sleep(43200)
+            due_customers = await db.get_due_reminders()
+            for c in due_customers:
+                try:
+                    due_date_str = str(c['due_date'])[:10]
+                    text = (
+                        f"⏰ <b>Hurmatli {c['full_name']}!</b>\n\n"
+                        f"<b>«{c['shop_name']}»</b> do'konidagi kelishilgan to'lov muddati (<code>{due_date_str}</code>) yetib keldi.\n"
+                        f"💰 Joriy qarz/nasiya balansingiz: <b>{c['balance']:,.0f} so'm</b>.\n\n"
+                        f"💳 <i>Imkoningiz bo'lganda to'lovni amalga oshirishingizni so'raymiz. Xaridingiz uchun rahmat!</i>\n"
+                        f"💬 <a href='tg://user?id={c['shop_admin_id']}'>Do'konchi bilan bog'lanish</a>"
+                    )
+                    await bot.send_message(chat_id=c['telegram_id'], text=text, parse_mode="HTML")
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error(f"Due reminder scheduler xatosi: {e}")
+            await asyncio.sleep(60)
+
 async def main():
     logger.info("Ma'lumotlar bazasi initsializatsiya qilinmoqda...")
     await db.init_db()
@@ -78,8 +102,9 @@ async def main():
     dp.include_router(shop_admin.router)
     dp.include_router(client.router)
 
-    # Avtomatik kunlik backup vazifasini fonda yoqish
+    # Avtomatik kunlik backup va eslatma vazifalarini fonda yoqish
     asyncio.create_task(daily_backup_scheduler(bot))
+    asyncio.create_task(due_reminder_scheduler(bot))
 
     bot_info = await bot.get_me()
     logger.info(f"Bot ishga tushdi: @{bot_info.username} (ID: {bot_info.id})")

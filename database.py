@@ -67,7 +67,7 @@ async def init_db():
                 )
             """)
 
-            # 4. Customers jadvali
+            # 4. Customers jadvali (due_date bilan)
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS customers (
                     id SERIAL PRIMARY KEY,
@@ -76,10 +76,16 @@ async def init_db():
                     full_name TEXT NOT NULL,
                     phone TEXT,
                     balance DOUBLE PRECISION DEFAULT 0.0,
+                    due_date TIMESTAMP,
                     created_at TIMESTAMP DEFAULT NOW(),
                     UNIQUE(shop_id, telegram_id)
                 )
             """)
+            # Ustun mavjud bo'lmasa qo'shish
+            try:
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS due_date TIMESTAMP")
+            except Exception:
+                pass
 
             # 5. Transactions jadvali
             await conn.execute("""
@@ -582,6 +588,55 @@ async def link_customer_telegram(customer_id: int, telegram_id: int, full_name: 
             async with db.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)) as cursor:
                 row = await cursor.fetchone()
                 return dict(row) if row else None
+
+async def set_customer_due_date(customer_id: int, days: int):
+    """Mijoz uchun to'lov muddatini belgilash"""
+    if USE_POSTGRES:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            if days <= 0:
+                await conn.execute("UPDATE customers SET due_date = NULL WHERE id = $1", customer_id)
+            else:
+                await conn.execute("UPDATE customers SET due_date = NOW() + ($1 || ' days')::INTERVAL WHERE id = $2", str(days), customer_id)
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            if days <= 0:
+                await db.execute("UPDATE customers SET due_date = NULL WHERE id = ?", (customer_id,))
+            else:
+                await db.execute("UPDATE customers SET due_date = datetime('now', ?) WHERE id = ?", (f"+{days} days", customer_id))
+            await db.commit()
+
+async def get_due_reminders():
+    """Bugun to'lov muddati yetib kelgan qarzdorlarni olish (Avtomatik eslatma uchun)"""
+    if USE_POSTGRES:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT c.*, s.name as shop_name, s.admin_id as shop_admin_id
+                FROM customers c
+                JOIN shops s ON c.shop_id = s.id
+                WHERE c.balance > 0 
+                  AND c.due_date IS NOT NULL 
+                  AND c.due_date::DATE <= CURRENT_DATE
+                  AND c.telegram_id IS NOT NULL
+                  AND s.is_active = 1
+            """)
+            return [dict(r) for r in rows]
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT c.*, s.name as shop_name, s.admin_id as shop_admin_id
+                FROM customers c
+                JOIN shops s ON c.shop_id = s.id
+                WHERE c.balance > 0 
+                  AND c.due_date IS NOT NULL 
+                  AND date(c.due_date) <= date('now')
+                  AND c.telegram_id IS NOT NULL
+                  AND s.is_active = 1
+            """) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(r) for r in rows]
 
 async def get_customers_by_shop(shop_id: int):
     if USE_POSTGRES:

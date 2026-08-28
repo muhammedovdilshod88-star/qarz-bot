@@ -108,31 +108,54 @@ def get_cancel_kb() -> ReplyKeyboardMarkup:
         resize_keyboard=True
     )
 
-def get_customer_actions_kb(customer_id: int, bot_username: str, shop_id: int, phone: str = None) -> InlineKeyboardMarkup:
+def get_due_date_select_kb(customer_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⏳ 3 kun", callback_data=f"setdue_{customer_id}_3"),
+                InlineKeyboardButton(text="⏳ 7 kun (1 hafta)", callback_data=f"setdue_{customer_id}_7"),
+            ],
+            [
+                InlineKeyboardButton(text="⏳ 15 kun", callback_data=f"setdue_{customer_id}_15"),
+                InlineKeyboardButton(text="⏳ 30 kun (1 oy)", callback_data=f"setdue_{customer_id}_30"),
+            ],
+            [InlineKeyboardButton(text="❌ Muddatni olib tashlash", callback_data=f"setdue_{customer_id}_0")],
+            [InlineKeyboardButton(text="🔙 Orqaga", callback_data=f"view_cust_{customer_id}")]
+        ]
+    )
+
+def get_customer_actions_kb(customer_id: int, bot_username: str, shop_id: int, phone: str = None, has_telegram: bool = False, due_date_str: str = None) -> InlineKeyboardMarkup:
     from urllib.parse import quote
-    # Har bir mijoz uchun shaxsiy hisob havolasi (start=c_ID)
     customer_link = f"https://t.me/{bot_username}?start=c_{customer_id}"
-    share_url = f"https://t.me/share/url?url={quote(customer_link)}&text={quote('Assalomu alaykum! Do‘konimizdagi qarz daftari va xaridlar tarixingizni kuzatib borish uchun ushbu havolani bosing:')}"
+    share_url = f"https://t.me/share/url?url={quote(customer_link)}&text={quote('Assalomu alaykum! Do‘konimizdagi qarz va nasiya hisobingizni kuzatib borish uchun ushbu havolani bosing:')}"
     
     rows = [
         [
-            InlineKeyboardButton(text="➕ Qarz yozish", callback_data=f"debt_{customer_id}"),
+            InlineKeyboardButton(text="➕ Qarz / Nasiya", callback_data=f"debt_{customer_id}"),
             InlineKeyboardButton(text="➖ To'lov olish", callback_data=f"pay_{customer_id}")
         ],
         [
-            InlineKeyboardButton(text="📜 Qarz tarixi", callback_data=f"history_{customer_id}"),
+            InlineKeyboardButton(text="🔔 Eslatish yuborish", callback_data=f"remind_{customer_id}"),
+            InlineKeyboardButton(text=f"📅 Muddat ({due_date_str})" if due_date_str else "📅 Muddat belgilash", callback_data=f"due_{customer_id}")
+        ],
+        [
+            InlineKeyboardButton(text="📜 Amallar tarixi", callback_data=f"history_{customer_id}"),
             InlineKeyboardButton(text="📤 Taklif yuborish", url=share_url)
         ]
     ]
     
+    extra_row = []
     if phone:
-        # Telefon raqamdan belgilarni tozalash
+        extra_row.append(InlineKeyboardButton(text="📲 SMS shabloni", callback_data=f"sms_{customer_id}"))
         clean_phone = "".join([c for c in phone if c.isdigit()])
         if clean_phone:
-            rows.append([InlineKeyboardButton(text="💬 Mijoz Telegramiga o'tish", url=f"https://t.me/+{clean_phone}")])
+            extra_row.append(InlineKeyboardButton(text="💬 Telegrami", url=f"https://t.me/+{clean_phone}"))
+            
+    if extra_row:
+        rows.append(extra_row)
             
     rows.append([
-        InlineKeyboardButton(text="🗑 Mijozni o'chirish", callback_data=f"del_cust_{customer_id}"),
+        InlineKeyboardButton(text="🗑 O'chirish", callback_data=f"del_cust_{customer_id}"),
         InlineKeyboardButton(text="🔙 Orqaga", callback_data="back_to_list")
     ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -145,7 +168,8 @@ def get_customers_list_kb(customers: list, page: int = 0, per_page: int = 8) -> 
     
     for c in page_items:
         balance_str = format_money(c['balance'])
-        btn_text = f"👤 {c['full_name']} — {balance_str}"
+        due_icon = " ⏰" if c.get('due_date') else ""
+        btn_text = f"👤 {c['full_name']} — {balance_str}{due_icon}"
         inline_keyboard.append([InlineKeyboardButton(text=btn_text, callback_data=f"view_cust_{c['id']}")])
         
     nav_buttons = []
@@ -158,3 +182,4 @@ def get_customers_list_kb(customers: list, page: int = 0, per_page: int = 8) -> 
         inline_keyboard.append(nav_buttons)
         
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
+

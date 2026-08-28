@@ -338,6 +338,8 @@ async def back_to_customers_list(call: CallbackQuery):
 
 # ==================== MIJOZNI KO'RISH ====================
 
+from keyboards.admin_kb import get_due_date_select_kb
+
 @router.callback_query(F.data.startswith("view_cust_"))
 async def view_customer_detail(call: CallbackQuery, bot: Bot):
     customer_id = int(call.data.split("_")[2])
@@ -349,16 +351,130 @@ async def view_customer_detail(call: CallbackQuery, bot: Bot):
     bot_info = await bot.get_me()
     status_tg = "✅ Telegram ulangan" if customer['telegram_id'] else "❌ Telegram hali ulanmagan"
     phone_text = customer['phone'] if customer['phone'] else "Kiritilmagan"
+    due_str = str(customer['due_date'])[:10] if customer.get('due_date') else None
+    due_display = f"📅 <b>To'lov muddati:</b> <code>{due_str}</code> gacha\n" if due_str else ""
     
     text = (
         f"👤 <b>Mijoz:</b> {customer['full_name']}\n"
-        f"📞 <b>Telefon:</b> {phone_text}\n"
+        f"📞 <b>Telefon:</b> <code>{phone_text}</code>\n"
         f"📱 <b>Holat:</b> {status_tg}\n"
-        f"💰 <b>Joriy qarz balansi:</b> <b>{format_money(customer['balance'])}</b>\n\n"
+        f"{due_display}"
+        f"💰 <b>Joriy qarz/nasiya balansi:</b> <b>{format_money(customer['balance'])}</b>\n\n"
         f"Quyidagi amallardan birini tanlang:"
     )
-    kb = get_customer_actions_kb(customer_id, bot_info.username, customer['shop_id'], customer['phone'])
+    kb = get_customer_actions_kb(
+        customer_id=customer_id, 
+        bot_username=bot_info.username, 
+        shop_id=customer['shop_id'], 
+        phone=customer['phone'],
+        has_telegram=bool(customer['telegram_id']),
+        due_date_str=due_str
+    )
     await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    await call.answer()
+
+# ==================== 1. TELEGRAM ORQALI ESLATISH ====================
+
+@router.callback_query(F.data.startswith("remind_"))
+async def send_customer_reminder(call: CallbackQuery, bot: Bot):
+    customer_id = int(call.data.split("_")[1])
+    customer = await db.get_customer(customer_id)
+    if not customer:
+        await call.answer("Mijoz topilmadi!", show_alert=True)
+        return
+        
+    if customer['balance'] <= 0:
+        await call.answer("Bu mijozda faol qarz yo'q!", show_alert=True)
+        return
+        
+    shop = await db.get_shop_by_id(customer['shop_id'])
+    shop_name = shop['name'] if shop else "Do'kon"
+    
+    if not customer['telegram_id']:
+        await call.answer("⚠️ Mijoz hali botga ulanmagan! Pastdagi '📲 SMS shabloni' orqali yuborishingiz mumkin.", show_alert=True)
+        return
+        
+    # Madaniyatli va rasmiy eslatma matni
+    reminder_msg = (
+        f"🔔 <b>Hurmatli {customer['full_name']}!</b>\n\n"
+        f"<b>«{shop_name}»</b> do'konidagi qarz va nasiya hisobingiz bo'yicha joriy qoldiq: <b>{format_money(customer['balance'])}</b>.\n\n"
+        f"💳 <i>Imkoningiz bo'lganda to'lovni amalga oshirishingizni so'raymiz. Xaridingiz uchun rahmat!</i>\n\n"
+        f"💬 <a href='tg://user?id={shop['admin_id']}'>Do'konchi bilan bog'lanish</a>"
+    )
+    
+    try:
+        await bot.send_message(chat_id=customer['telegram_id'], text=reminder_msg, parse_mode="HTML")
+        await call.answer(f"✅ {customer['full_name']} ga Telegram orqali eslatma yuborildi!", show_alert=True)
+    except Exception as e:
+        await call.answer(f"⚠️ Xatolik: {e}", show_alert=True)
+
+# ==================== 2. MUDDAT BELGILASH ====================
+
+@router.callback_query(F.data.startswith("due_"))
+async def start_set_due_date(call: CallbackQuery):
+    customer_id = int(call.data.split("_")[1])
+    customer = await db.get_customer(customer_id)
+    if not customer:
+        await call.answer("Mijoz topilmadi!", show_alert=True)
+        return
+        
+    text = (
+        f"📅 <b>{customer['full_name']}</b> uchun to'lov muddatini tanlang:\n\n"
+        f"<i>(Belgilangan muddat kelganda bot mijozga avtomatik eslatma yuboradi)</i>"
+    )
+    await call.message.edit_text(text, reply_markup=get_due_date_select_kb(customer_id), parse_mode="HTML")
+    await call.answer()
+
+@router.callback_query(F.data.startswith("setdue_"))
+async def process_set_due_date(call: CallbackQuery, bot: Bot):
+    parts = call.data.split("_")
+    customer_id = int(parts[1])
+    days = int(parts[2])
+    
+    await db.set_customer_due_date(customer_id, days)
+    msg = "✅ To'lov muddati olib tashlandi." if days == 0 else f"✅ To'lov muddati {days} kunga belgilandi!"
+    await call.answer(msg, show_alert=True)
+    
+    # Qayta mijoz oynasiga qaytish
+    call.data = f"view_cust_{customer_id}"
+    await view_customer_detail(call, bot)
+
+# ==================== 3. SMS SHABLONI ====================
+
+@router.callback_query(F.data.startswith("sms_"))
+async def show_sms_template(call: CallbackQuery):
+    customer_id = int(call.data.split("_")[1])
+    customer = await db.get_customer(customer_id)
+    if not customer:
+        await call.answer("Mijoz topilmadi!", show_alert=True)
+        return
+        
+    shop = await db.get_shop_by_id(customer['shop_id'])
+    shop_name = shop['name'] if shop else "Do'kon"
+    phone = customer['phone'] or ""
+    
+    sms_text = (
+        f"Assalomu alaykum, {customer['full_name']}! "
+        f"'{shop_name}' do'konidagi qarz/nasiyangiz: {format_money(customer['balance'])}. "
+        f"Imkoningiz bo'lganda to'lovni amalga oshirishingizni so'raymiz. Rahmat!"
+    )
+    
+    from urllib.parse import quote
+    clean_phone = "".join([c for c in phone if c.isdigit()])
+    sms_url = f"sms:+{clean_phone}?body={quote(sms_text)}" if clean_phone else None
+    
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    buttons = []
+    if sms_url:
+        buttons.append([InlineKeyboardButton(text="📱 SMS ilovasida ochish", url=sms_url)])
+    buttons.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data=f"view_cust_{customer_id}")])
+    
+    text = (
+        f"📲 <b>Mijoz uchun tayyor SMS shabloni:</b>\n\n"
+        f"<code>{sms_text}</code>\n\n"
+        f"<i>(Matn ustiga bosing — nusxalanadi va telefondan SMS qilib yuborishingiz mumkin)</i>"
+    )
+    await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     await call.answer()
 
 # ==================== QARZ TARIXI ====================
