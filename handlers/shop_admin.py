@@ -246,20 +246,41 @@ async def send_shop_qr_code(message: Message, bot: Bot, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
     if not shop:
+        from keyboards.admin_kb import get_open_store_kb
+        await message.answer(
+            "⚠️ Sizda hali faol qarz daftari ochilmagan.\n"
+            "Daftaringizni ochish uchun quyidagi tugmani tanlang 👇",
+            reply_markup=get_open_store_kb()
+        )
         return
     
     bot_info = await bot.get_me()
     qr_bio = generate_shop_qr(bot_info.username, shop['id'])
     
-    caption = (
-        f"📒 <b>«{shop['name']}»</b> — Maxsus Ulanish QR Kodi\n\n"
-        f"📌 Ushbu QR kodni qarzdorlaringizga berishingiz yoki osib qo'yishingiz mumkin.\n"
-        f"Ular telefon kamerasida skaner qilib botga ulanishadi va o'z qarzlarini ko'rib borishadi.\n\n"
-        f"🔗 Havola: https://t.me/{bot_info.username}?start=shop_{shop['id']}"
+    from urllib.parse import quote
+    shop_link = f"https://t.me/{bot_info.username}?start=shop_{shop['id']}"
+    share_url = f"https://t.me/share/url?url={quote(shop_link)}&text={quote('Assalomu alaykum! «' + shop['name'] + '» dagi qarz va hisob-kitoblarimizni kuzatib borish uchun ushbu botga kiring:')}"
+    
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    share_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📤 Qarzdorlarga Telegramdan yuborish", url=share_url)],
+            [InlineKeyboardButton(text="🔙 Orqaga", callback_data="back_to_admin_main")]
+        ]
     )
     
-    photo_file = BufferedInputFile(qr_bio.getvalue(), filename=f"shop_{shop['id']}.png")
-    await message.answer_photo(photo=photo_file, caption=caption, parse_mode="HTML")
+    caption = (
+        f"📒 <b>«{shop['name']}»</b> — Maxsus Ulanish QR Kodi\n\n"
+        f"📌 Ushbu QR kodni qarzdorlaringizga berishingiz yoki chop etib qo'yishingiz mumkin.\n"
+        f"Ular telefon kamerasida skaner qilib botga ulanishadi va o'z qarzlarini ko'rib borishadi.\n\n"
+        f"🔗 <b>To'g'ridan-to'g'ri havola:</b>\n<code>{shop_link}</code>"
+    )
+    
+    try:
+        photo_file = BufferedInputFile(qr_bio.getvalue(), filename=f"shop_{shop['id']}.png")
+        await message.answer_photo(photo=photo_file, caption=caption, reply_markup=share_kb, parse_mode="HTML")
+    except Exception:
+        await message.answer(caption, reply_markup=share_kb, parse_mode="HTML")
 
 def build_stats_message(shop_name: str, stats: dict) -> str:
     period_names = {
@@ -565,10 +586,10 @@ async def delete_customer_callback(call: CallbackQuery):
         else:
             await call.message.edit_text("Sizda hali mijozlar mavjud emas.")
 
-# ==================== YANGI MIJOZ QO'SHISH ====================
+# ==================== YANGI QARZDOR QO'SHISH ====================
 
 @router.message(StateFilter('*'), F.text.in_(["➕ Yangi qo'shish", "➕ Yangi mijoz", "➕ Qo'shish"]))
-async def add_customer_start(message: Message, state: FSMContext, bot: Bot):
+async def add_customer_start(message: Message, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
     if not shop:
@@ -580,29 +601,18 @@ async def add_customer_start(message: Message, state: FSMContext, bot: Bot):
         )
         return
         
-    bot_info = await bot.get_me()
-    qr_bio = generate_shop_qr(bot_info.username, shop['id'])
-    
-    caption = (
-        f"➕ <b>Yangi qarzdor qo'shish usullari:</b>\n\n"
-        f"1️⃣ <b>📲 QR Kod orqali (Tavsiya etiladi):</b>\n"
-        f"Qarzdor ushbu QR kodni telefon kamerasi bilan skaner qilsa, bir zumda daftaringizga ulanadi va hisobotlarni ko'rib boradi.\n\n"
-        f"2️⃣ <b>✍️ Qo'lda kiritish:</b>\n"
-        f"Agar qarzdorning telefoni bo'lmasa yoki hozir oldingizda bo'lmasa, quyidagi tugmani bosib uning Ism va telefonini kiritib qo'yishingiz mumkin."
+    await state.set_state(AdminStates.add_customer_name)
+    await message.answer(
+        "👤 <b>Yangi qarzdorning Ism va Familiyasini kiriting:</b>\n<i>(Masalan: Jamshid Karimov yoki Rustam)</i>",
+        parse_mode="HTML",
+        reply_markup=get_cancel_kb()
     )
-    
-    kb = get_add_customer_menu_kb(bot_info.username, shop['id'])
-    try:
-        photo_file = BufferedInputFile(qr_bio.getvalue(), filename=f"shop_{shop['id']}_qr.png")
-        await message.answer_photo(photo=photo_file, caption=caption, reply_markup=kb, parse_mode="HTML")
-    except Exception:
-        await message.answer(caption, reply_markup=kb, parse_mode="HTML")
 
 @router.callback_query(F.data == "manual_add_cust")
 async def start_manual_customer_add(call: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.add_customer_name)
     await call.message.answer(
-        "Mijozning <b>Ism va Familiyasini</b> kiriting:\n<i>(Masalan: Rustam Aliyev)</i>",
+        "👤 <b>Yangi qarzdorning Ism va Familiyasini kiriting:</b>\n<i>(Masalan: Jamshid Karimov yoki Rustam)</i>",
         parse_mode="HTML",
         reply_markup=get_cancel_kb()
     )
@@ -617,8 +627,11 @@ async def process_customer_name(message: Message, state: FSMContext):
     await state.update_data(full_name=name)
     await state.set_state(AdminStates.add_customer_phone)
     await message.answer(
-        f"Mijoz: <b>{name}</b>\n\nEndi mijozning telefon raqamini kiriting (yoki o'tkazib yuborish uchun '-' yozing):",
-        parse_mode="HTML"
+        f"👤 Qarzdor: <b>{name}</b>\n\n"
+        f"📞 Endi uning <b>telefon raqamini</b> kiriting:\n"
+        f"<i>(Masalan: +998901234567 yoki telefon kiritmaslik uchun <b>-</b> belgisini yuboring)</i>",
+        parse_mode="HTML",
+        reply_markup=get_cancel_kb()
     )
 
 @router.message(AdminStates.add_customer_phone)
