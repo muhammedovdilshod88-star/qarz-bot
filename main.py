@@ -33,31 +33,43 @@ async def start_web_server():
     await site.start()
     logger.info(f"Health check server {port}-portda ishga tushdi.")
 
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from utils.excel import generate_full_platform_excel
 from aiogram.types import BufferedInputFile
 
+# Toshkent vaqti mintaqasi (UTC+5)
+TASHKENT_TZ = timezone(timedelta(hours=5))
+
 async def daily_backup_scheduler(bot: Bot):
-    """Har 24 soatda Super Adminga avtomatik to'liq Excel zaxira yuborish"""
+    """Har kuni kechasi soat 23:00 da (Toshkent vaqti) Super Adminga avtomatik to'liq Excel zaxira yuborish"""
+    last_backup_date = None
     while True:
         try:
-            # Har 24 soat kutish (86400 soniya)
-            await asyncio.sleep(86400)
-            bio = await generate_full_platform_excel()
-            date_str = datetime.now().strftime("%Y-%m-%d")
-            filename = f"Avto_Backup_{date_str}.xlsx"
-            doc = BufferedInputFile(bio.getvalue(), filename=filename)
+            now_tashkent = datetime.now(TASHKENT_TZ)
+            today_str = now_tashkent.strftime("%Y-%m-%d")
             
-            for sa_id in config.SUPER_ADMIN_IDS:
-                try:
-                    await bot.send_document(
-                        chat_id=sa_id,
-                        document=doc,
-                        caption=f"🛡 <b>Avtomatik 24-soatlik Zaxira (Backup)</b>\n📅 Sana: <code>{date_str}</code>\nBarcha ma'lumotlar xavfsiz saqlangan.",
-                        parse_mode="HTML"
-                    )
-                except Exception:
-                    pass
+            # Agar soat 23 bo'lsa va bugun hali yuborilmagan bo'lsa
+            if now_tashkent.hour >= 23 and last_backup_date != today_str:
+                bio = await generate_full_platform_excel()
+                filename = f"Avto_Backup_{today_str}.xlsx"
+                doc = BufferedInputFile(bio.getvalue(), filename=filename)
+                
+                for sa_id in config.SUPER_ADMIN_IDS:
+                    try:
+                        await bot.send_document(
+                            chat_id=sa_id,
+                            document=doc,
+                            caption=f"🛡 <b>Avtomatik Kunlik Zaxira (Backup)</b>\n📅 Sana: <code>{today_str}</code> (23:00 Toshkent vaqti)\nBarcha do'konlar va qarz ma'lumotlari xavfsiz saqlangan.",
+                            parse_mode="HTML"
+                        )
+                    except Exception as e:
+                        logger.error(f"Backup yuborishda xatolik: {e}")
+                        
+                last_backup_date = today_str
+                logger.info(f"Kunlik zaxira muvaffaqiyatli yuborildi: {today_str}")
+
+            # Har 1 daqiqada tekshirib turadi
+            await asyncio.sleep(60)
         except Exception as e:
             logger.error(f"Backup scheduler xatosi: {e}")
             await asyncio.sleep(60)
