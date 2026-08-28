@@ -292,7 +292,30 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
         except Exception:
             pass
 
-# ==================== MIJOZ TELEFON RAQAMINI QABUL QILISH ====================
+    # 6. Oddiy mijoz (avval ulanib bo'lgan)
+    cust_accounts = await db.get_customers_by_telegram_id(user_id)
+    if cust_accounts:
+        await message.answer(
+            f"Assalomu alaykum, <b>{user_full_name}</b>!\nQarz va Nasiya daftariga xush kelibsiz.",
+            parse_mode="HTML",
+            reply_markup=get_client_main_kb(has_own_shop=False)
+        )
+        return
+
+    # 7. Yangi tashrif buyuruvchi (Do'kon ochish / Tiklash taklifi)
+    promo_text = (
+        f"👋 Assalomu alaykum, <b>{user_full_name}</b>!\n\n"
+        f"📒 <b>Do'konlar uchun Qarz va Nasiya Daftari Botiga xush kelibsiz!</b>\n\n"
+        f"Ushbu bot <b>Oziq-ovqat, Kiyim-kechak, Avto ehtiyot qismlar, Qurilish mollari, Kosmetika</b> va boshqa barcha turdagi savdo do'konlari uchun mo'ljallangan.\n\n"
+        f"✨ <b>Asosiy imkoniyatlar:</b>\n"
+        f"• Har qanday tovar uchun qarz va nasiyalarni 3 soniyada yozish\n"
+        f"• Xaridorlarga avtomatik Telegram hisobot borishi\n"
+        f"• Kassirlar va sotuvchilarni sherik qilib ulash\n"
+        f"• Qarzlarni 1 tiyinigacha aniq nazorat qilish\n\n"
+        f"🎁 <b>Siz uchun 1 OY (30 KUN) MUTLAQO BEPUL sinov muddati taqdim etiladi!</b>\n\n"
+        f"O'z do'koningizni ochish yoki mavjud do'konni yangi profilga tiklash uchun tanlang 👇"
+    )
+    await message.answer(promo_text, parse_mode="HTML", reply_markup=get_open_store_kb())
 
 # ==================== MIJOZ TASDIQLASH VA QABUL QILISH ====================
 
@@ -382,30 +405,6 @@ async def process_customer_qr_phone(message: Message, state: FSMContext, bot: Bo
         f"Har gal xarid qilganingizda bot sizga avtomatik hisobot yuborib turadi."
     )
     await message.answer(welcome_text, parse_mode="HTML", reply_markup=get_client_main_kb(has_own_shop=has_own_shop))
-
-    # 6. Oddiy mijoz (avval ulanib bo'lgan)
-    cust_accounts = await db.get_customers_by_telegram_id(user_id)
-    if cust_accounts:
-        await message.answer(
-            f"Assalomu alaykum, <b>{user_full_name}</b>!\nQarz daftariga xush kelibsiz.",
-            reply_markup=get_client_main_kb()
-        )
-        return
-
-    # 7. Yangi tashrif buyuruvchi (Do'kon ochish / Tiklash taklifi)
-    promo_text = (
-        f"👋 Assalomu alaykum, <b>{user_full_name}</b>!\n\n"
-        f"📒 <b>Do'konlar uchun Qarz va Nasiya Daftari Botiga xush kelibsiz!</b>\n\n"
-        f"Ushbu bot <b>Oziq-ovqat, Kiyim-kechak, Avto ehtiyot qismlar, Qurilish mollari, Kosmetika</b> va boshqa barcha turdagi savdo do'konlari uchun mo'ljallangan.\n\n"
-        f"✨ <b>Asosiy imkoniyatlar:</b>\n"
-        f"• Har qanday tovar uchun qarz va nasiyalarni 3 soniyada yozish\n"
-        f"• Xaridorlarga avtomatik Telegram hisobot borishi\n"
-        f"• Kassirlar va sotuvchilarni sherik qilib ulash\n"
-        f"• Qarzlarni 1 tiyinigacha aniq nazorat qilish\n\n"
-        f"🎁 <b>Siz uchun 1 OY (30 KUN) MUTLAQO BEPUL sinov muddati taqdim etiladi!</b>\n\n"
-        f"O'z do'koningizni ochish yoki mavjud do'konni yangi profilga tiklash uchun tanlang 👇"
-    )
-    await message.answer(promo_text, parse_mode="HTML", reply_markup=get_open_store_kb())
 
 # ==================== O'Z DO'KONINI OCHISH (TRIAL REGISTER) ====================
 
