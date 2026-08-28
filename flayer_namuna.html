@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Qarz Daftari — Do'konlar Uchun Flayer</title>
+    <title>Qarz va Nasiya Daftari — Barcha Do'konlar Uchun Flayer</title>
     <style>
         @page {
             size: A5 portrait;
@@ -18,7 +18,7 @@
             justify-content: center;
         }
         .flayer {
-            width: 420px;
+            width: 440px;
             background: white;
             border-radius: 20px;
             padding: 30px;
@@ -42,60 +42,77 @@
         h1 {
             color: #0f172a;
             font-size: 26px;
-            margin: 0 0 10px 0;
+            margin: 0 0 8px 0;
             line-height: 1.2;
         }
         .subtitle {
             color: #475569;
-            font-size: 15px;
-            margin-bottom: 20px;
+            font-size: 14px;
+            margin-bottom: 15px;
+            line-height: 1.4;
+        }
+        .store-tags {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 6px;
+            margin-bottom: 18px;
+        }
+        .tag {
+            background: #eff6ff;
+            color: #1e40af;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 20px;
+            border: 1px solid #bfdbfe;
         }
         .features {
             background: #f8fafc;
             border-radius: 12px;
-            padding: 15px;
+            padding: 14px;
             text-align: left;
-            margin-bottom: 25px;
+            margin-bottom: 20px;
             border-left: 4px solid #3b82f6;
         }
         .feature-item {
             display: flex;
             align-items: center;
-            font-size: 14px;
+            font-size: 13.5px;
             color: #1e293b;
-            margin-bottom: 8px;
+            margin-bottom: 7px;
             font-weight: 500;
         }
         .feature-item:last-child {
             margin-bottom: 0;
         }
         .icon {
-            margin-right: 10px;
-            font-size: 18px;
+            margin-right: 8px;
+            font-size: 16px;
         }
         .qr-box {
             background: #eff6ff;
             border: 2px dashed #3b82f6;
             border-radius: 16px;
-            padding: 20px;
+            padding: 16px;
             display: inline-block;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
         }
         .qr-box img {
-            width: 180px;
-            height: 180px;
+            width: 170px;
+            height: 170px;
             border-radius: 8px;
         }
         .call-to-action {
-            font-size: 16px;
+            font-size: 15px;
             font-weight: bold;
             color: #1e3a8a;
-            margin-top: 10px;
+            margin-top: 8px;
         }
         .footer {
             font-size: 12px;
             color: #94a3b8;
-            margin-top: 15px;
+            margin-top: 10px;
         }
         @media print {
             body {
@@ -116,13 +133,22 @@
     <div class="badge">🎁 1 OY MUTLAQO BEPUL!</div>
     
     <h1>📓 Qog'oz daftardan charchadingizmi?</h1>
-    <div class="subtitle">Mahalla do'konlari uchun avtomatlashtirilgan zamonaviy <b>Telegram Qarz Daftari</b>!</div>
+    <div class="subtitle">Barcha turdagi do'konlar uchun avtomatlashtirilgan zamonaviy <b>Telegram Qarz va Nasiya Daftari</b>!</div>
+
+    <div class="store-tags">
+        <span class="tag">🛒 Oziq-ovqat</span>
+        <span class="tag">👗 Kiyim-kechak</span>
+        <span class="tag">🚗 Avto Zapchast</span>
+        <span class="tag">🧱 Qurilish mollari</span>
+        <span class="tag">💄 Kosmetika</span>
+        <span class="tag">📱 Texnika</span>
+    </div>
 
     <div class="features">
-        <div class="feature-item"><span class="icon">✅</span> Qarz va to'lovlarni soniyalarda yozish</div>
-        <div class="feature-item"><span class="icon">📲</span> Xaridorlarga avtomatik hisobot borishi</div>
-        <div class="feature-item"><span class="icon">👥</span> Sheriklar va sotuvchilarni ulash</div>
-        <div class="feature-item"><span class="icon">📊</span> Kunlik va oylik qarzlar tahlili</div>
+        <div class="feature-item"><span class="icon">✅</span> Har qanday tovar uchun qarz/nasiyani 3 soniyada yozish</div>
+        <div class="feature-item"><span class="icon">📲</span> Xaridorlarga avtomatik Telegram hisobot borishi</div>
+        <div class="feature-item"><span class="icon">👥</span> Sotuvchilar va sheriklarni ulash</div>
+        <div class="feature-item"><span class="icon">📊</span> Kunlik va oylik tushumlar va nasiyalar tahlili</div>
     </div>
 
     <div class="qr-box">
@@ -131,7 +157,7 @@
     </div>
 
     <div class="subtitle" style="font-size: 13px; margin: 0;">
-        Do'koningizni 1 daqiqada oching va qarz daftaringizni yengillashtiring!
+        Do'koningizni 1 daqiqada oching va nasiya hisob-kitoblarini yengillashtiring!
     </div>
 
     <div class="footer">

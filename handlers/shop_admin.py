@@ -501,7 +501,7 @@ async def start_add_debt(call: CallbackQuery, state: FSMContext):
     await state.update_data(customer_id=customer_id, customer_name=customer['full_name'])
     
     await call.message.answer(
-        f"➕ <b>{customer['full_name']}</b> ga qarz summasini kiriting (faqat raqam, masalan: 50000):",
+        f"➕ <b>{customer['full_name']}</b> ga qarz / nasiya summasini kiriting (faqat raqam, masalan: 50000 yoki 1500000):",
         parse_mode="HTML",
         reply_markup=get_cancel_kb()
     )
@@ -521,7 +521,10 @@ async def process_debt_amount(message: Message, state: FSMContext):
     await state.update_data(debt_amount=amount)
     await state.set_state(AdminStates.add_debt_desc)
     await message.answer(
-        f"Summa: <b>{format_money(amount)}</b>\n\nEndi qarz izohini yozing (masalan: <i>yog', shakar, 2 ta non</i>) yoki o'tkazib yuborish uchun '-' yozing:",
+        f"Summa: <b>{format_money(amount)}</b>\n\n"
+        f"📝 <b>Olingan tovar yoki xizmat izohini yozing:</b>\n"
+        f"<i>(Masalan: Ko'ylak, Zapchast, Sement, Yog'-shakar, 2 ta kastyum va h.k.)</i>\n\n"
+        f"Yoki o'tkazib yuborish uchun <code>-</code> yozing:",
         parse_mode="HTML"
     )
 
@@ -545,11 +548,11 @@ async def process_debt_description(message: Message, state: FSMContext, bot: Bot
     is_sa = message.from_user.id in config.SUPER_ADMIN_IDS
     
     msg_text = (
-        f"✅ <b>Qarz muvaffaqiyatli yozildi!</b>\n\n"
+        f"✅ <b>Qarz / Nasiya muvaffaqiyatli yozildi!</b>\n\n"
         f"👤 Mijoz: <b>{updated_customer['full_name']}</b>\n"
-        f"➕ Qo'shilgan qarz: <b>{format_money(data['debt_amount'])}</b>\n"
-        f"📝 Izoh: <i>{desc or 'Izohsiz'}</i>\n"
-        f"💰 Jami qarz balansi: <b>{format_money(updated_customer['balance'])}</b>"
+        f"➕ Qo'shilgan summa: <b>{format_money(data['debt_amount'])}</b>\n"
+        f"📦 Tovar / Izoh: <i>{desc or 'Kiritilmadi'}</i>\n"
+        f"💰 Jami qarz/nasiya balansi: <b>{format_money(updated_customer['balance'])}</b>"
     )
     await message.answer(msg_text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa))
     
@@ -558,10 +561,10 @@ async def process_debt_description(message: Message, state: FSMContext, bot: Bot
         try:
             client_notify = (
                 f"📌 <b>{shop['name']}</b> do'konidan xabar:\n\n"
-                f"Sizning hisobingizga yangi qarz yozildi: <b>+{format_money(data['debt_amount'])}</b>\n"
-                f"📝 Izoh: <i>{desc or 'Kiritilmadi'}</i>\n"
-                f"💰 Sizning jami qarzingiz: <b>{format_money(updated_customer['balance'])}</b>\n\n"
-                f"💬 <a href='tg://user?id={shop['admin_id']}'>Do'konchi bilan Telegramda bog'lanish</a>"
+                f"Sizning hisobingizga yangi qarz / nasiya yozildi: <b>+{format_money(data['debt_amount'])}</b>\n"
+                f"📦 Tovar / Izoh: <i>{desc or 'Kiritilmadi'}</i>\n"
+                f"💰 Sizning jami qarz/nasiya balansingiz: <b>{format_money(updated_customer['balance'])}</b>\n\n"
+                f"💬 <a href='tg://user?id={shop['admin_id']}'>Do'konchi bilan bog'lanish</a>"
             )
             await bot.send_message(chat_id=updated_customer['telegram_id'], text=client_notify, parse_mode="HTML")
         except Exception:

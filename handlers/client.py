@@ -126,10 +126,11 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
         await state.set_state(UserRegisterShop.shop_name)
         promo_start = (
             f"👋 Assalomu alaykum, <b>{user_full_name}</b>!\n\n"
-            f"🎁 <b>Qarz Daftari Botiga xush kelibsiz!</b>\n"
-            f"Sizga <b>1 OY (30 KUN) MUTLAQO BEPUL</b> sinov muddati taqdim etiladi.\n\n"
+            f"📒 <b>Qarz va Nasiya Daftari Botiga xush kelibsiz!</b>\n"
+            f"<i>(Oziq-ovqat, Kiyim-kechak, Zapchast, Qurilish mollari va boshqa barcha do'konlar uchun)</i>\n\n"
+            f"🎁 Sizga <b>1 OY (30 KUN) MUTLAQO BEPUL</b> sinov muddati taqdim etiladi.\n\n"
             f"🏪 <b>1-qadam: Do'koningiz nomini kiriting:</b>\n"
-            f"<i>(Masalan: Omad Oziq-ovqat, Baraka Market)</i>"
+            f"<i>(Masalan: Baraka Market, Rayhon Kiyimlar, Avto Zapchast, Stroy Material)</i>"
         )
         await message.answer(promo_start, parse_mode="HTML", reply_markup=get_cancel_kb())
         return
@@ -277,9 +278,13 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
     # 7. Yangi tashrif buyuruvchi (Do'kon ochish / Tiklash taklifi)
     promo_text = (
         f"👋 Assalomu alaykum, <b>{user_full_name}</b>!\n\n"
-        f"📒 <b>Qarz Daftari Botiga xush kelibsiz!</b>\n\n"
-        f"Bu bot mahalla oziq-ovqat va boshqa do'konlar uchun qarz va nasiyalarni avtomatlashtirish, "
-        f"mijozlarga avtomatik hisobot yuborish va qarz aylanmasini nazorat qilish uchun mo'ljallangan.\n\n"
+        f"📒 <b>Do'konlar uchun Qarz va Nasiya Daftari Botiga xush kelibsiz!</b>\n\n"
+        f"Ushbu bot <b>Oziq-ovqat, Kiyim-kechak, Avto ehtiyot qismlar, Qurilish mollari, Kosmetika</b> va boshqa barcha turdagi savdo do'konlari uchun mo'ljallangan.\n\n"
+        f"✨ <b>Asosiy imkoniyatlar:</b>\n"
+        f"• Har qanday tovar uchun qarz va nasiyalarni 3 soniyada yozish\n"
+        f"• Xaridorlarga avtomatik Telegram hisobot borishi\n"
+        f"• Kassirlar va sotuvchilarni sherik qilib ulash\n"
+        f"• Qarzlarni 1 tiyinigacha aniq nazorat qilish\n\n"
         f"🎁 <b>Siz uchun 1 OY (30 KUN) MUTLAQO BEPUL sinov muddati taqdim etiladi!</b>\n\n"
         f"O'z do'koningizni ochish yoki mavjud do'konni yangi profilga tiklash uchun tanlang 👇"
     )
@@ -296,7 +301,7 @@ async def start_open_my_store_cb(call: CallbackQuery, state: FSMContext):
         
     await state.set_state(UserRegisterShop.shop_name)
     await call.message.answer(
-        "🏪 <b>Do'koningiz nomini kiriting:</b>\n<i>(Masalan: Omad Oziq-ovqat, Baraka Market)</i>",
+        "🏪 <b>Do'koningiz nomini kiriting:</b>\n<i>(Masalan: Baraka Market, Rayhon Butik, Avto Zapchast, Stroy Material)</i>",
         parse_mode="HTML",
         reply_markup=get_cancel_kb()
     )
@@ -378,7 +383,7 @@ async def process_user_shop_phone(message: Message, state: FSMContext, bot: Bot)
 
 # ==================== MIJOZ TUGMALARI ====================
 
-@router.message(F.text.in_(["💳 Mening qarzlarim", "🔄 Yangilash"]))
+@router.message(F.text.in_(["💳 Mening qarz va nasiyalarim", "💳 Mening qarzlarim", "🔄 Yangilash"]))
 async def show_my_debts(message: Message, bot: Bot):
     user_id = message.from_user.id
     accounts = await db.get_customers_by_telegram_id(user_id)
@@ -387,11 +392,11 @@ async def show_my_debts(message: Message, bot: Bot):
         await message.answer("Siz hali hech qaysi do'kon tizimiga ulanmagansiz. Do'kon QR kodini skaner qiling.")
         return
     
-    text = "💳 <b>Sizning qarzlaringiz:</b>\n\n"
+    text = "💳 <b>Sizning qarz va nasiyalaringiz:</b>\n\n"
     total_all = 0.0
     for acc in accounts:
         text += f"🏪 <b>Do'kon:</b> {acc['shop_name']}\n"
-        text += f"💰 <b>Qarzingiz:</b> {format_money(acc['balance'])}\n"
+        text += f"💰 <b>Qarzingiz / Nasiya:</b> {format_money(acc['balance'])}\n"
         if acc['shop_phone']:
             text += f"📞 <b>Telefon:</b> {acc['shop_phone']}\n"
         
@@ -402,7 +407,7 @@ async def show_my_debts(message: Message, bot: Bot):
         text += "────────────────────\n"
         total_all += acc['balance']
         
-    text += f"\n📊 <b>Jami umumiy qarzingiz: {format_money(total_all)}</b>"
+    text += f"\n📊 <b>Jami umumiy qarz/nasiyangiz: {format_money(total_all)}</b>"
     await message.answer(text, parse_mode="HTML", reply_markup=get_client_main_kb())
 
 @router.message(F.text == "📲 Ekranga znachok qilish")
