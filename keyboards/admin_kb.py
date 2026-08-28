@@ -8,8 +8,9 @@ def get_admin_main_kb(is_superadmin: bool = False, days_left: int = 30) -> Reply
     buttons = [
         [KeyboardButton(text="📋 Mijozlar ro'yxati"), KeyboardButton(text="➕ Yangi mijoz")],
         [KeyboardButton(text="🔍 Qidirish"), KeyboardButton(text="📊 Statistika")],
-        [KeyboardButton(text="📲 Do'kon QR kodi"), KeyboardButton(text="👥 Sheriklar (Adminlar)")],
-        [KeyboardButton(text="⚙️ Do'kon nomi"), KeyboardButton(text=f"⏳ Obuna: {days_left} kun qoldi")],
+        [KeyboardButton(text="📥 Do'kon Excel hisoboti"), KeyboardButton(text="📲 Do'kon QR kodi")],
+        [KeyboardButton(text="👥 Sheriklar (Adminlar)"), KeyboardButton(text="⚙️ Do'kon nomi")],
+        [KeyboardButton(text=f"⏳ Obuna: {days_left} kun qoldi")],
         [KeyboardButton(text="👤 Shaxsiy qarzlarim (Xaridor rejimi)")],
         [KeyboardButton(text="📲 Ekranga znachok qilish")],
     ]

@@ -575,6 +575,40 @@ async def show_client_homescreen_guide(message: Message):
     )
     await message.answer(text, parse_mode="HTML")
 
+@router.message(F.text.in_(["📥 Qarzlarimni Excelda yuklash", "📥 Shaxsiy qarzlarimni Excelda yuklash"]))
+async def download_my_debts_excel(message: Message, bot: Bot):
+    user_id = message.from_user.id
+    user_full_name = message.from_user.full_name
+    accounts = await db.get_customers_by_telegram_id(user_id)
+    own_shop = await db.get_shop_by_admin(user_id)
+    has_own_shop = bool(own_shop)
+    
+    if not accounts:
+        await message.answer("Sizda hali qarzlar tarixi mavjud emas.", reply_markup=get_client_main_kb(has_own_shop=has_own_shop))
+        return
+        
+    await message.answer("⏳ <i>Shaxsiy qarz va xaridlaringiz bo'yicha Excel hisobot tayyorlanmoqda...</i>", parse_mode="HTML")
+    
+    try:
+        from utils.excel import generate_customer_excel
+        from aiogram.types import BufferedInputFile
+        from datetime import datetime
+        
+        bio = await generate_customer_excel(user_id, user_full_name)
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        filename = f"Shaxsiy_Qarzlarim_{date_str}.xlsx"
+        doc = BufferedInputFile(bio.getvalue(), filename=filename)
+        
+        caption = (
+            f"📊 <b>Shaxsiy Qarz va Nasiyalar Hisoboti (.xlsx)</b>\n\n"
+            f"👤 Foydalanuvchi: <b>{user_full_name}</b>\n"
+            f"📅 Sana: <code>{date_str}</code>\n\n"
+            f"<i>(Ushbu faylni Excel, Google Sheets yoki kompyuterda bemalol ochib ko'rishingiz mumkin)</i>"
+        )
+        await message.answer_document(document=doc, caption=caption, parse_mode="HTML", reply_markup=get_client_main_kb(has_own_shop=has_own_shop))
+    except Exception as e:
+        await message.answer(f"⚠️ Excel tayyorlashda xatolik: {e}")
+
 @router.message(F.text.in_(["📜 Xaridlar tarixi", "📜 Xaridlarim tarixi"]))
 async def show_my_history(message: Message):
     user_id = message.from_user.id
@@ -591,7 +625,7 @@ async def show_my_history(message: Message):
         f"────────────────────\n\n"
     )
     for acc in accounts:
-        text += f"🏪 <b>{acc['shop_name']}</b> do'koni:\n"
+        text += f"🏪 <b>{acc['shop_name']}</b>:\n"
         txs = await db.get_customer_transactions(acc['id'], limit=5)
         if not txs:
             text += "<i>Amallar yo'q</i>\n"

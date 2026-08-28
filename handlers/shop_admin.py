@@ -210,6 +210,37 @@ async def show_add_to_homescreen_guide(message: Message):
     )
     await message.answer(text, parse_mode="HTML")
 
+@router.message(StateFilter('*'), F.text == "📥 Do'kon Excel hisoboti")
+async def send_shop_excel_report(message: Message, bot: Bot, state: FSMContext):
+    await state.clear()
+    shop = await db.get_shop_by_admin(message.from_user.id)
+    if not shop:
+        return
+        
+    await message.answer("⏳ <i>Do'koningiz hisoboti Excel formatida tayyorlanmoqda...</i>", parse_mode="HTML")
+    
+    try:
+        from utils.excel import generate_shop_excel
+        from aiogram.types import BufferedInputFile
+        from datetime import datetime
+        
+        bio = await generate_shop_excel(shop['id'])
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        filename = f"{shop['name']}_Hisobot_{date_str}.xlsx"
+        doc = BufferedInputFile(bio.getvalue(), filename=filename)
+        
+        caption = (
+            f"📊 <b>«{shop['name']}» — To'liq Excel hisoboti</b>\n\n"
+            f"📅 Sana: <code>{date_str}</code>\n"
+            f"📑 <b>Varaqlar:</b>\n"
+            f"1️⃣ <b>Mijozlar va Qarzlar:</b> Barcha mijozlaringiz va ularning qarz qoldiqlari\n"
+            f"2️⃣ <b>Amallar Tarixi:</b> Barcha savdo va to'lovlar tarixi\n\n"
+            f"<i>(Kompyuter yoki telefonda Excel dasturida ochib ko'rishingiz mumkin)</i>"
+        )
+        await message.answer_document(document=doc, caption=caption, parse_mode="HTML")
+    except Exception as e:
+        await message.answer(f"⚠️ Hisobot tayyorlashda xatolik: {e}")
+
 @router.message(StateFilter('*'), F.text == "📲 Do'kon QR kodi")
 async def send_shop_qr_code(message: Message, bot: Bot, state: FSMContext):
     await state.clear()
