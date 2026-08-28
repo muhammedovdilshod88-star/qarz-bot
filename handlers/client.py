@@ -22,7 +22,10 @@ class UserRegisterShop(StatesGroup):
 class UserRecoverShop(StatesGroup):
     phone = State()
 
-@router.message(StateFilter(UserRegisterShop, UserRecoverShop), F.text.in_(["❌ Bekor qilish", "/cancel"]))
+class CustomerRegisterState(StatesGroup):
+    waiting_for_phone = State()
+
+@router.message(StateFilter(UserRegisterShop, UserRecoverShop, CustomerRegisterState), F.text.in_(["❌ Bekor qilish", "/cancel"]))
 async def cancel_user_register_cb(message: Message, state: FSMContext):
     await state.clear()
     promo_text = (
@@ -237,34 +240,81 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
             shop_id = int(args.replace("shop_", ""))
             target_shop = await db.get_shop_by_id(shop_id)
             if target_shop and target_shop['is_active']:
-                cust = await db.register_telegram_customer(
-                    shop_id=shop_id,
-                    telegram_id=user_id,
-                    full_name=user_full_name,
-                    phone=None
-                )
-                
-                try:
-                    admin_notify = (
-                        f"🔔 <b>Yangi mijoz ulandi!</b>\n\n"
-                        f"👤 Ism: <b>{user_full_name}</b>\n"
-                        f"🆔 Telegram ID: <code>{user_id}</code>\n"
-                        f"Mijoz endi do'koningiz qarz daftariga kiritildi."
+                # Allaqachon ulangan bo'lsa
+                existing_cust = await db.get_customers_by_telegram_id(user_id)
+                shop_cust = next((c for c in existing_cust if c['shop_id'] == shop_id), None)
+                if shop_cust and shop_cust['phone']:
+                    welcome_text = (
+                        f"Assalomu alaykum, <b>{user_full_name}</b>!\n\n"
+                        f"🏪 Siz <b>{target_shop['name']}</b> do'koni tizimiga ulangansiz.\n"
+                        f"💰 Sizning joriy qarz/nasiya balansingiz: <b>{format_money(shop_cust['balance'])}</b>"
                     )
-                    await bot.send_message(chat_id=target_shop['admin_id'], text=admin_notify, parse_mode="HTML")
-                except Exception:
-                    pass
+                    await message.answer(welcome_text, parse_mode="HTML", reply_markup=get_client_main_kb())
+                    return
                 
-                welcome_text = (
-                    f"Assalomu alaykum, <b>{user_full_name}</b>!\n\n"
-                    f"🏪 Siz <b>{target_shop['name']}</b> do'koni tizimiga muvaffaqiyatli ulandingiz.\n"
-                    f"💰 Sizning joriy qarz balansingiz: <b>{format_money(cust['balance'])}</b>\n\n"
-                    f"Har gal qarzga xarid qilganingizda yoki to'lov qilganingizda bot sizga avtomatik hisobot yuborib turadi."
+                # Telefon raqam so'rash
+                await state.set_state(CustomerRegisterState.waiting_for_phone)
+                await state.update_data(shop_id=shop_id, shop_name=target_shop['name'])
+                prompt_phone = (
+                    f"👋 Assalomu alaykum, <b>{user_full_name}</b>!\n\n"
+                    f"🏪 Siz <b>«{target_shop['name']}»</b> do'koni Qarz va Nasiya tizimiga ulanmoqdasiz.\n\n"
+                    f"📱 Do'konga ulanish va hisob-kitoblaringizni kuzatib borish uchun pastdagi <b>«📱 Telefon raqamni ulashish»</b> tugmasini bosing:"
                 )
-                await message.answer(welcome_text, parse_mode="HTML", reply_markup=get_client_main_kb())
+                await message.answer(prompt_phone, parse_mode="HTML", reply_markup=get_contact_kb())
                 return
         except Exception:
             pass
+
+# ==================== MIJOZ TELEFON RAQAMINI QABUL QILISH ====================
+
+@router.message(CustomerRegisterState.waiting_for_phone)
+async def process_customer_qr_phone(message: Message, state: FSMContext, bot: Bot):
+    if message.contact:
+        phone = message.contact.phone_number
+        if not phone.startswith("+"):
+            phone = "+" + phone
+    else:
+        phone_raw = message.text.strip() if message.text else ""
+        phone = phone_raw if phone_raw != "-" else None
+        
+    data = await state.get_data()
+    shop_id = data.get('shop_id')
+    user_id = message.from_user.id
+    user_full_name = message.from_user.full_name
+    
+    target_shop = await db.get_shop_by_id(shop_id)
+    shop_name = target_shop['name'] if target_shop else "Do'kon"
+    
+    cust = await db.register_telegram_customer(
+        shop_id=shop_id,
+        telegram_id=user_id,
+        full_name=user_full_name,
+        phone=phone
+    )
+    await state.clear()
+    
+    # Do'konchiga bildirishnoma
+    if target_shop:
+        try:
+            admin_notify = (
+                f"🔔 <b>Yangi mijoz ulandi!</b>\n\n"
+                f"👤 Ism: <b>{user_full_name}</b>\n"
+                f"📞 Tel: <code>{phone or 'Kiritilmadi'}</code>\n"
+                f"🆔 Telegram ID: <code>{user_id}</code>\n\n"
+                f"Mijoz endi do'koningiz qarz daftariga kiritildi."
+            )
+            await bot.send_message(chat_id=target_shop['admin_id'], text=admin_notify, parse_mode="HTML")
+        except Exception:
+            pass
+            
+    welcome_text = (
+        f"🎉 <b>Tabriklaymiz, {user_full_name}!</b>\n\n"
+        f"🏪 Siz <b>«{shop_name}»</b> do'koni tizimiga muvaffaqiyatli ulandingiz.\n"
+        f"📞 Telefon raqamingiz: <code>{phone or 'Kiritilmadi'}</code>\n"
+        f"💰 Sizning joriy qarz/nasiya balansingiz: <b>{format_money(cust['balance'])}</b>\n\n"
+        f"Har gal qarz/nasiyaga xarid qilganingizda yoki to'lov qilganingizda bot sizga avtomatik hisobot yuborib turadi."
+    )
+    await message.answer(welcome_text, parse_mode="HTML", reply_markup=get_client_main_kb())
 
     # 6. Oddiy mijoz (avval ulanib bo'lgan)
     cust_accounts = await db.get_customers_by_telegram_id(user_id)

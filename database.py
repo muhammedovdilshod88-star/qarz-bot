@@ -549,6 +549,9 @@ async def register_telegram_customer(shop_id: int, telegram_id: int, full_name: 
         async with pool.acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM customers WHERE shop_id = $1 AND telegram_id = $2", shop_id, telegram_id)
             if row:
+                if phone and row['phone'] != phone:
+                    await conn.execute("UPDATE customers SET phone = $1 WHERE id = $2", phone, row['id'])
+                    row = await conn.fetchrow("SELECT * FROM customers WHERE id = $1", row['id'])
                 return dict(row)
             row = await conn.fetchrow("""
                 INSERT INTO customers (shop_id, telegram_id, full_name, phone)
@@ -562,6 +565,9 @@ async def register_telegram_customer(shop_id: int, telegram_id: int, full_name: 
             async with db.execute("SELECT * FROM customers WHERE shop_id = ? AND telegram_id = ?", (shop_id, telegram_id)) as cursor:
                 row = await cursor.fetchone()
                 if row:
+                    if phone and row['phone'] != phone:
+                        await db.execute("UPDATE customers SET phone = ? WHERE id = ?", (phone, row['id']))
+                        await db.commit()
                     return dict(row)
             cursor = await db.execute(
                 "INSERT INTO customers (shop_id, telegram_id, full_name, phone) VALUES (?, ?, ?, ?)",
