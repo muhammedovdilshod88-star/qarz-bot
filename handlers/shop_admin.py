@@ -68,13 +68,13 @@ async def start_add_staff(call: CallbackQuery, bot: Bot):
     shop = dict(shop_row)
     # Faqat asosiy do'kon egasi sherik qo'sha oladi
     if shop.get('admin_role') == 'staff':
-        await call.answer("⚠️ Faqat asosiy do'kon egasi yangi sherik qo'sha oladi!", show_alert=True)
+        await call.answer("⚠️ Faqat asosiy do'kon egasi yangi sotuvchi/sherik qo'sha oladi!", show_alert=True)
         return
         
     admins = await db.list_shop_admins(shop['id'])
     staff_count = sum(1 for a in admins if a['role'] == 'staff')
-    if staff_count >= 2:
-        await call.answer("⚠️ Siz allaqachon maksimal (2 ta) sherik qo'shgansiz!", show_alert=True)
+    if staff_count >= 5:
+        await call.answer("⚠️ Siz allaqachon maksimal (5 ta) sotuvchi/sherik qo'shgansiz!", show_alert=True)
         return
         
     token = await db.create_staff_invite(shop['id'])
@@ -88,13 +88,13 @@ async def start_add_staff(call: CallbackQuery, bot: Bot):
     
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📤 Sherikka Telegramdan yuborish", url=share_url)],
+        [InlineKeyboardButton(text="📤 Sotuvchi/Sherikka yuborish", url=share_url)],
         [InlineKeyboardButton(text="🔙 Orqaga", callback_data="back_to_staff_list")]
     ])
     
     text = (
-        f"🔗 <b>Yangi sherik uchun maxsus taklif havolasi tayyor!</b>\n\n"
-        f"Ushbu havolani sherigingizga (sotuvchi yoki qarindoshingizga) yuboring. U havolani bir marta bosishi bilan avtomatik do'kon administratoriga aylanadi:\n\n"
+        f"🔗 <b>Yangi sotuvchi / sherik uchun taklif havolasi tayyor!</b>\n\n"
+        f"Ushbu havolani sotuvchingiz yoki qarindoshingizga yuboring. U havolani bitta bosishi bilan avtomatik do'kon administratoriga aylanadi va qarz daftarini yurgiza oladi:\n\n"
         f"<code>{invite_url}</code>\n\n"
         f"<i>(Bir martalik xavfsiz havola)</i>"
     )
@@ -109,9 +109,9 @@ async def back_to_staff_list_cb(call: CallbackQuery):
         return
     admins = await db.list_shop_admins(shop['id'])
     staff_count = sum(1 for a in admins if a['role'] == 'staff')
-    can_add = staff_count < 2
+    can_add = staff_count < 5
     kb = get_staff_list_kb(admins, can_add=can_add)
-    await call.message.edit_text("👥 <b>Do'kon Administratorlari (Sheriklar):</b>", reply_markup=kb, parse_mode="HTML")
+    await call.message.edit_text("👥 <b>Do'kon Administratorlari (Sotuvchilar / Sheriklar):</b>", reply_markup=kb, parse_mode="HTML")
     await call.answer()
 
 @router.callback_query(F.data.startswith("del_staff_"))
@@ -124,15 +124,15 @@ async def delete_staff_callback(call: CallbackQuery):
         
     shop = dict(shop_row)
     if shop.get('admin_role') == 'staff':
-        await call.answer("⚠️ Faqat asosiy do'kon egasi sherikni o'chira oladi!", show_alert=True)
+        await call.answer("⚠️ Faqat asosiy do'kon egasi sotuvchini o'chira oladi!", show_alert=True)
         return
         
     await db.delete_shop_staff(staff_id, shop['id'])
-    await call.answer("Sherik o'chirildi!", show_alert=True)
+    await call.answer("Sotuvchi o'chirildi!", show_alert=True)
     
     admins = await db.list_shop_admins(shop['id'])
     staff_count = sum(1 for a in admins if a['role'] == 'staff')
-    can_add = staff_count < 2
+    can_add = staff_count < 5
     kb = get_staff_list_kb(admins, can_add=can_add)
     await call.message.edit_reply_markup(reply_markup=kb)
 

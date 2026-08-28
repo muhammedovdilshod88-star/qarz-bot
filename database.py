@@ -282,8 +282,8 @@ async def use_staff_invite(token: str, telegram_id: int, full_name: str):
                 return None, "Yaroqsiz yoki allaqachon ishlatilgan taklif havolasi!"
             shop_id = invite['shop_id']
             cnt = await conn.fetchval("SELECT COUNT(*) FROM shop_admins WHERE shop_id = $1 AND role = 'staff'", shop_id)
-            if cnt >= 2:
-                return None, "Ushbu do'konga allaqachon maksimal (2 ta) sherik biriktirilgan!"
+            if cnt >= 5:
+                return None, "Ushbu do'konga allaqachon maksimal (5 ta) sotuvchi/sherik biriktirilgan!"
             await conn.execute("""
                 INSERT INTO shop_admins (shop_id, telegram_id, name, role) 
                 VALUES ($1, $2, $3, 'staff')
@@ -302,8 +302,8 @@ async def use_staff_invite(token: str, telegram_id: int, full_name: str):
             shop_id = invite['shop_id']
             async with db.execute("SELECT COUNT(*) as cnt FROM shop_admins WHERE shop_id = ? AND role = 'staff'", (shop_id,)) as cursor2:
                 row = await cursor2.fetchone()
-                if row['cnt'] >= 2:
-                    return None, "Ushbu do'konga allaqachon maksimal (2 ta) sherik biriktirilgan!"
+                if row['cnt'] >= 5:
+                    return None, "Ushbu do'konga allaqachon maksimal (5 ta) sotuvchi/sherik biriktirilgan!"
             await db.execute(
                 "INSERT OR REPLACE INTO shop_admins (shop_id, telegram_id, name, role) VALUES (?, ?, ?, 'staff')",
                 (shop_id, telegram_id, full_name)
