@@ -416,16 +416,26 @@ async def process_customer_qr_phone(message: Message, state: FSMContext, bot: Bo
 async def start_open_my_store_cb(call: CallbackQuery, state: FSMContext):
     existing = await db.get_shop_by_admin(call.from_user.id)
     if existing:
-        await call.answer("Sizda allaqachon daftar/do'kon mavjud!", show_alert=True)
+        await call.answer("Sizda allaqachon daftar mavjud!", show_alert=True)
         return
         
     await state.set_state(UserRegisterShop.shop_name)
-    await call.message.answer(
-        "📒 <b>Daftar / Do'kon / Biznes nomini kiriting:</b>\n"
-        "<i>(Masalan: Baraka Market, Usta Jamshid (Avtoservis), Shaxsiy Qarz Daftari, Kvartira Ijarasi)</i>",
-        parse_mode="HTML",
-        reply_markup=get_cancel_kb()
+    prompt_text = (
+        "✍️ <b>Qarz / Nasiya beruvchi nomingizni (Daftar yoki Faoliyat nomi) yozing:</b>\n\n"
+        "💡 <i>Sohangizga qarab misollar:</i>\n"
+        "1️⃣ 👤 <b>Shaxsiy qarzlar</b> <i>(Dilshodning Qarz Daftari, Shaxsiy qarzlarim)</i>\n"
+        "2️⃣ 🛒 <b>Savdo va do'konlar</b> <i>(Baraka Market, Rayhon Kiyimlar, Avto Zapchast, Stroy Material)</i>\n"
+        "3️⃣ 🏭 <b>Ishlab chiqarish va sexlar</b> <i>(Mebel sexi, Tikuvchilik sexi, Nonvoyxona, Qandolatchilik)</i>\n"
+        "4️⃣ 🛠 <b>Ustaxonalar va xizmatlar</b> <i>(Avtoservis, Santexnik, Mebel ustasi, Remont)</i>\n"
+        "5️⃣ 🏠 <b>Ijara va arenda</b> <i>(Kvartira ijarasi, Ofis, Mashina arendasi)</i>\n"
+        "6️⃣ 📦 <b>Ulgurji savdo va dilerlar</b> <i>(Optom tovarlar, Yetkazib beruvchilar)</i>\n"
+        "7️⃣ 🌾 <b>Qishloq xo'jaligi va fermerlik</b> <i>(Meva-sabzavot, Go'sht-sut mahsulotlari)</i>\n"
+        "8️⃣ 🎓 <b>O'quv markazlar va repetitorlar</b> <i>(O'quv kursi, Xususiy repetitorlik)</i>\n"
+        "9️⃣ 🚚 <b>Yuk tashish va transport</b> <i>(Logistika, Kuryerlik xizmati)</i>\n"
+        "🔟 💼 <b>Frilanserlar va boshqa barcha sohalar</b>\n\n"
+        "👇 <b>O'zingizga qulay nomni yozib yuboring:</b>"
     )
+    await call.message.answer(prompt_text, parse_mode="HTML", reply_markup=get_cancel_kb())
     await call.answer()
 
 @router.message(UserRegisterShop.shop_name)
@@ -437,7 +447,7 @@ async def process_user_shop_name(message: Message, state: FSMContext):
     await state.update_data(shop_name=name)
     await state.set_state(UserRegisterShop.shop_phone)
     await message.answer(
-        f"Daftar/Biznes nomi: <b>{name}</b>\n\nPastdagi <b>«📱 Telefon raqamni ulashish»</b> tugmasini bosing yoki raqamingizni yozing:",
+        f"Daftar/Faoliyat nomi: <b>{name}</b>\n\nPastdagi <b>«📱 Telefon raqamni ulashish»</b> tugmasini bosing yoki raqamingizni yozing:",
         parse_mode="HTML",
         reply_markup=get_contact_kb()
     )
