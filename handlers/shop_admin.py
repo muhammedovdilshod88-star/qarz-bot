@@ -332,6 +332,12 @@ async def list_customers_cmd(message: Message, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
     if not shop:
+        from keyboards.admin_kb import get_open_store_kb
+        await message.answer(
+            "⚠️ Sizda hali faol qarz daftari ochilmagan.\n"
+            "Daftaringizni ochish uchun quyidagi tugmani tanlang 👇",
+            reply_markup=get_open_store_kb()
+        )
         return
     
     customers = await db.list_shop_customers(shop['id'], sort_by_debt=True)
@@ -566,6 +572,12 @@ async def add_customer_start(message: Message, state: FSMContext, bot: Bot):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
     if not shop:
+        from keyboards.admin_kb import get_open_store_kb
+        await message.answer(
+            "⚠️ Sizda hali faol qarz daftari ochilmagan.\n"
+            "Daftaringizni ochish uchun quyidagi tugmani tanlang 👇",
+            reply_markup=get_open_store_kb()
+        )
         return
         
     bot_info = await bot.get_me()
@@ -580,8 +592,11 @@ async def add_customer_start(message: Message, state: FSMContext, bot: Bot):
     )
     
     kb = get_add_customer_menu_kb(bot_info.username, shop['id'])
-    photo_file = BufferedInputFile(qr_bio.getvalue(), filename=f"shop_{shop['id']}_qr.png")
-    await message.answer_photo(photo=photo_file, caption=caption, reply_markup=kb, parse_mode="HTML")
+    try:
+        photo_file = BufferedInputFile(qr_bio.getvalue(), filename=f"shop_{shop['id']}_qr.png")
+        await message.answer_photo(photo=photo_file, caption=caption, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        await message.answer(caption, reply_markup=kb, parse_mode="HTML")
 
 @router.callback_query(F.data == "manual_add_cust")
 async def start_manual_customer_add(call: CallbackQuery, state: FSMContext):
