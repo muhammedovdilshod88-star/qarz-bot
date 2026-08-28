@@ -240,16 +240,43 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
             shop_id = int(args.replace("shop_", ""))
             target_shop = await db.get_shop_by_id(shop_id)
             if target_shop and target_shop['is_active']:
-                # Allaqachon ulangan bo'lsa
+                # Agar o'z do'koni QR kodini skaner qilgan bo'lsa
+                own_shop = await db.get_shop_by_admin(user_id)
+                if own_shop and own_shop['id'] == shop_id:
+                    await message.answer(
+                        f"🏪 <b>Bu sizning o'zingizning «{own_shop['name']}» do'koningiz QR kodi!</b>\n\n"
+                        f"Ushbu QR kodni peshtaxtaga yoki devorga osib qo'ying — xaridorlaringiz skaner qilib mijoz bo'lib ulanishadi.",
+                        parse_mode="HTML"
+                    )
+                    return
+                
+                # Agar o'zining boshqa do'koni bor bo'lsa (Do'konchi bo'lsa) -> Tasdiqlash oynasi
+                if own_shop:
+                    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                    confirm_kb = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="✅ Ha, xaridor bo'lib ulanish", callback_data=f"confirm_join_{shop_id}")],
+                        [InlineKeyboardButton(text="🔙 O'z do'konimga qaytish", callback_data="back_to_my_shop")]
+                    ])
+                    text_confirm = (
+                        f"🔔 <b>{user_full_name}, diqqat!</b>\n\n"
+                        f"Siz <b>«{target_shop['name']}»</b> do'konining QR kodini skaner qildingiz.\n\n"
+                        f"Siz ushbu do'konga <b>Xaridor (Mijoz)</b> sifatida ulanmoqchimisiz?\n\n"
+                        f"💡 <i>Xavotir olmang, o'zingizning «{own_shop['name']}» do'koningiz to'liq saqlanadi va istalgan paytda o'z do'koningiz boshqaruviga qayta olasiz.</i>"
+                    )
+                    await message.answer(text_confirm, parse_mode="HTML", reply_markup=confirm_kb)
+                    return
+
+                # Allaqachon ulangan oddiy xaridor bo'lsa
                 existing_cust = await db.get_customers_by_telegram_id(user_id)
                 shop_cust = next((c for c in existing_cust if c['shop_id'] == shop_id), None)
                 if shop_cust and shop_cust['phone']:
                     welcome_text = (
-                        f"Assalomu alaykum, <b>{user_full_name}</b>!\n\n"
-                        f"🏪 Siz <b>{target_shop['name']}</b> do'koni tizimiga ulangansiz.\n"
+                        f"👤 <b>SHAXSIY HISOBINGIZ (Xaridor rejimi)</b>\n"
+                        f"────────────────────\n"
+                        f"🏪 Siz <b>«{target_shop['name']}»</b> do'koni tizimiga ulangansiz.\n"
                         f"💰 Sizning joriy qarz/nasiya balansingiz: <b>{format_money(shop_cust['balance'])}</b>"
                     )
-                    await message.answer(welcome_text, parse_mode="HTML", reply_markup=get_client_main_kb())
+                    await message.answer(welcome_text, parse_mode="HTML", reply_markup=get_client_main_kb(has_own_shop=False))
                     return
                 
                 # Telefon raqam so'rash
@@ -266,6 +293,41 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
             pass
 
 # ==================== MIJOZ TELEFON RAQAMINI QABUL QILISH ====================
+
+# ==================== MIJOZ TASDIQLASH VA QABUL QILISH ====================
+
+@router.callback_query(F.data.startswith("confirm_join_"))
+async def confirm_join_customer_cb(call: CallbackQuery, state: FSMContext):
+    shop_id = int(call.data.split("_")[2])
+    target_shop = await db.get_shop_by_id(shop_id)
+    if not target_shop:
+        await call.answer("Do'kon topilmadi!", show_alert=True)
+        return
+        
+    await state.set_state(CustomerRegisterState.waiting_for_phone)
+    await state.update_data(shop_id=shop_id, shop_name=target_shop['name'])
+    prompt_phone = (
+        f"📱 <b>«{target_shop['name']}»</b> do'koni hisob-kitoblaringizni bog'lash uchun:\n\n"
+        f"Pastdagi <b>«📱 Telefon raqamni ulashish»</b> tugmasini bosing:"
+    )
+    await call.message.answer(prompt_phone, parse_mode="HTML", reply_markup=get_contact_kb())
+    await call.answer()
+
+@router.callback_query(F.data == "back_to_my_shop")
+async def back_to_my_shop_cb(call: CallbackQuery):
+    user_id = call.from_user.id
+    shop = await db.get_shop_by_admin(user_id)
+    if shop:
+        is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
+        is_sa = user_id in config.SUPER_ADMIN_IDS
+        text = (
+            f"🏪 <b>SIZNING DO'KONINGIZ: «{shop['name']}»</b>\n"
+            f"👑 <i>(Siz hozir o'z do'koningiz boshqaruvidasiz)</i>\n"
+            f"────────────────────\n"
+            f"⏳ Obuna muddati: <b>{days_left} kun qoldi</b>."
+        )
+        await call.message.answer(text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=days_left))
+    await call.answer()
 
 @router.message(CustomerRegisterState.waiting_for_phone)
 async def process_customer_qr_phone(message: Message, state: FSMContext, bot: Bot):
@@ -301,20 +363,25 @@ async def process_customer_qr_phone(message: Message, state: FSMContext, bot: Bo
                 f"👤 Ism: <b>{user_full_name}</b>\n"
                 f"📞 Tel: <code>{phone or 'Kiritilmadi'}</code>\n"
                 f"🆔 Telegram ID: <code>{user_id}</code>\n\n"
-                f"Mijoz endi do'koningiz qarz daftariga kiritildi."
+                f"Mijoz endi do'koningiz qarz/nasiya daftariga kiritildi."
             )
             await bot.send_message(chat_id=target_shop['admin_id'], text=admin_notify, parse_mode="HTML")
         except Exception:
             pass
             
+    own_shop = await db.get_shop_by_admin(user_id)
+    has_own_shop = bool(own_shop)
+    
     welcome_text = (
+        f"👤 <b>SHAXSIY HISOBINGIZ (Xaridor rejimi)</b>\n"
+        f"────────────────────\n"
         f"🎉 <b>Tabriklaymiz, {user_full_name}!</b>\n\n"
         f"🏪 Siz <b>«{shop_name}»</b> do'koni tizimiga muvaffaqiyatli ulandingiz.\n"
-        f"📞 Telefon raqamingiz: <code>{phone or 'Kiritilmadi'}</code>\n"
+        f"📞 Telefoningiz: <code>{phone or 'Kiritilmadi'}</code>\n"
         f"💰 Sizning joriy qarz/nasiya balansingiz: <b>{format_money(cust['balance'])}</b>\n\n"
-        f"Har gal qarz/nasiyaga xarid qilganingizda yoki to'lov qilganingizda bot sizga avtomatik hisobot yuborib turadi."
+        f"Har gal xarid qilganingizda bot sizga avtomatik hisobot yuborib turadi."
     )
-    await message.answer(welcome_text, parse_mode="HTML", reply_markup=get_client_main_kb())
+    await message.answer(welcome_text, parse_mode="HTML", reply_markup=get_client_main_kb(has_own_shop=has_own_shop))
 
     # 6. Oddiy mijoz (avval ulanib bo'lgan)
     cust_accounts = await db.get_customers_by_telegram_id(user_id)
@@ -431,24 +498,36 @@ async def process_user_shop_phone(message: Message, state: FSMContext, bot: Bot)
     except Exception as e:
         await message.answer(f"⚠️ Do'kon ochishda xatolik yuz berdi: {e}\nIltimos, /start bosib qaytadan urinib ko'ring.")
 
-# ==================== MIJOZ TUGMALARI ====================
+# ==================== MIJOZ TUGMALARI VA REJIM ALMASHTIRISH ====================
 
-@router.message(F.text.in_(["💳 Mening qarz va nasiyalarim", "💳 Mening qarzlarim", "🔄 Yangilash"]))
+@router.message(F.text.in_(["💳 Qayerda qancha qarzim bor?", "💳 Mening qarz va nasiyalarim", "💳 Mening qarzlarim", "🔄 Yangilash", "👤 Shaxsiy qarzlarim (Xaridor rejimi)"]))
 async def show_my_debts(message: Message, bot: Bot):
     user_id = message.from_user.id
     accounts = await db.get_customers_by_telegram_id(user_id)
+    own_shop = await db.get_shop_by_admin(user_id)
+    has_own_shop = bool(own_shop)
     
     if not accounts:
-        await message.answer("Siz hali hech qaysi do'kon tizimiga ulanmagansiz. Do'kon QR kodini skaner qiling.")
+        msg = (
+            f"👤 <b>SHAXSIY HISOBINGIZ (Xaridor rejimi)</b>\n"
+            f"────────────────────\n"
+            f"Sizda hozircha hech qaysi do'konda qarz yoki nasiya mavjud emas.\n\n"
+            f"<i>(Boshqa do'konlardan nasiyaga tovar olganingizda, do'kondagi QR kodni skaner qilsangiz hisobotlar shu yerda chiqadi).</i>"
+        )
+        await message.answer(msg, parse_mode="HTML", reply_markup=get_client_main_kb(has_own_shop=has_own_shop))
         return
     
-    text = "💳 <b>Sizning qarz va nasiyalaringiz:</b>\n\n"
+    text = (
+        f"👤 <b>SHAXSIY HISOBINGIZ (Xaridor rejimi)</b>\n"
+        f"🛒 <i>(Boshqa do'konlardan olgan qarz va nasiyalaringiz)</i>\n"
+        f"────────────────────\n\n"
+    )
     total_all = 0.0
     for acc in accounts:
         text += f"🏪 <b>Do'kon:</b> {acc['shop_name']}\n"
         text += f"💰 <b>Qarzingiz / Nasiya:</b> {format_money(acc['balance'])}\n"
         if acc['shop_phone']:
-            text += f"📞 <b>Telefon:</b> {acc['shop_phone']}\n"
+            text += f"📞 <b>Telefon:</b> <code>{acc['shop_phone']}</code>\n"
         
         shop = await db.get_shop_by_id(acc['shop_id'])
         if shop:
@@ -457,8 +536,27 @@ async def show_my_debts(message: Message, bot: Bot):
         text += "────────────────────\n"
         total_all += acc['balance']
         
-    text += f"\n📊 <b>Jami umumiy qarz/nasiyangiz: {format_money(total_all)}</b>"
-    await message.answer(text, parse_mode="HTML", reply_markup=get_client_main_kb())
+    text += f"\n📊 <b>Jami umumiy qarzingiz: {format_money(total_all)}</b>"
+    await message.answer(text, parse_mode="HTML", reply_markup=get_client_main_kb(has_own_shop=has_own_shop))
+
+@router.message(F.text == "🏪 Mening do'konim (Do'konchi rejimi)")
+async def return_to_my_store(message: Message, bot: Bot):
+    user_id = message.from_user.id
+    shop = await db.get_shop_by_admin(user_id)
+    if not shop:
+        await message.answer("Sizda hali o'z do'koningiz yo'q. Ochish uchun /start bosing.")
+        return
+        
+    is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
+    is_sa = user_id in config.SUPER_ADMIN_IDS
+    text = (
+        f"🏪 <b>SIZNING DO'KONINGIZ: «{shop['name']}»</b>\n"
+        f"👑 <i>(Siz hozir o'z do'koningiz boshqaruvidasiz)</i>\n"
+        f"────────────────────\n"
+        f"⏳ Obuna muddati: <b>{days_left} kun qoldi</b>.\n\n"
+        f"Do'kon boshqaruvi menyusi quyida 👇"
+    )
+    await message.answer(text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=days_left))
 
 @router.message(F.text == "📲 Ekranga znachok qilish")
 async def show_client_homescreen_guide(message: Message):
@@ -473,18 +571,23 @@ async def show_client_homescreen_guide(message: Message):
     )
     await message.answer(text, parse_mode="HTML")
 
-@router.message(F.text == "📜 Xaridlar tarixi")
+@router.message(F.text.in_(["📜 Xaridlar tarixi", "📜 Xaridlarim tarixi"]))
 async def show_my_history(message: Message):
     user_id = message.from_user.id
     accounts = await db.get_customers_by_telegram_id(user_id)
+    own_shop = await db.get_shop_by_admin(user_id)
+    has_own_shop = bool(own_shop)
     
     if not accounts:
-        await message.answer("Siz hali hech qaysi do'konga ulanmagansiz.")
+        await message.answer("Sizda hali xaridlar tarixi mavjud emas.", reply_markup=get_client_main_kb(has_own_shop=has_own_shop))
         return
     
-    text = "📜 <b>Oxirgi amallar tarixi:</b>\n\n"
+    text = (
+        f"📜 <b>SHAXSIY XARIDLARINGIZ TARIXI:</b>\n"
+        f"────────────────────\n\n"
+    )
     for acc in accounts:
-        text += f"🏪 <b>{acc['shop_name']}</b>:\n"
+        text += f"🏪 <b>{acc['shop_name']}</b> do'koni:\n"
         txs = await db.get_customer_transactions(acc['id'], limit=5)
         if not txs:
             text += "<i>Amallar yo'q</i>\n"
@@ -496,4 +599,4 @@ async def show_my_history(message: Message):
                 text += f"{icon} {format_money(t['amount'])}{desc}\n📅 <i>{date_str}</i>\n"
         text += "────────────────────\n"
         
-    await message.answer(text, parse_mode="HTML", reply_markup=get_client_main_kb())
+    await message.answer(text, parse_mode="HTML", reply_markup=get_client_main_kb(has_own_shop=has_own_shop))
