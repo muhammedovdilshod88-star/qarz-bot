@@ -106,8 +106,34 @@ async def main():
     asyncio.create_task(daily_backup_scheduler(bot))
     asyncio.create_task(due_reminder_scheduler(bot))
 
+    # Global xatoliklar ushlovchisi (Error Handler)
+    @dp.error()
+    async def global_error_handler(event, bot: Bot):
+        logger.error(f"Global xatolik: {event.exception}")
+        err_msg = (
+            f"⚠️ <b>DIQQAT: Botda xatolik yuz berdi!</b>\n\n"
+            f"❌ <b>Xatolik matni:</b>\n<code>{str(event.exception)[:400]}</code>\n\n"
+            f"Tizim uzluksiz ishlashda davom etmoqda."
+        )
+        for sa_id in config.SUPER_ADMIN_IDS:
+            try:
+                await bot.send_message(chat_id=sa_id, text=err_msg, parse_mode="HTML")
+            except Exception:
+                pass
+
     bot_info = await bot.get_me()
     logger.info(f"Bot ishga tushdi: @{bot_info.username} (ID: {bot_info.id})")
+
+    # Super Adminga bot ishga tushgani haqida signal yuborish
+    for sa_id in config.SUPER_ADMIN_IDS:
+        try:
+            await bot.send_message(
+                chat_id=sa_id,
+                text=f"🟢 <b>Qarz va Nasiya Boti (@{bot_info.username}) serverda muvaffaqiyatli ishga tushdi va 24/7 faol!</b>",
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
 
     # Cheksiz qayta ulanish zanjiri (Uzilib qolsa ham avtomatik qayta ulanadi)
     while True:
@@ -117,6 +143,12 @@ async def main():
             await dp.start_polling(bot, handle_signals=False)
         except Exception as e:
             logger.error(f"Pollingda xatolik yuz berdi: {e}. 5 soniyadan so'ng qayta ulanmoqda...")
+            err_poll_msg = f"🔴 <b>DIQQAT: Bot ulanishida uzilish yuz berdi!</b>\n<code>{str(e)[:300]}</code>\nQayta ulanmoqda..."
+            for sa_id in config.SUPER_ADMIN_IDS:
+                try:
+                    await bot.send_message(chat_id=sa_id, text=err_poll_msg, parse_mode="HTML")
+                except Exception:
+                    pass
             await asyncio.sleep(5)
 
 if __name__ == "__main__":
