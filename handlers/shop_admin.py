@@ -143,7 +143,7 @@ async def back_to_admin_panel(call: CallbackQuery):
 
 # ==================== DO'KON MA'LUMOTLARI VA SOZLAMALAR ====================
 
-@router.message(StateFilter('*'), F.text.in_(["⚙️ Daftar nomi", "⚙️ Do'kon nomi", "⚙️ Nomni o'zgartirish"]))
+@router.message(StateFilter('*'), F.text.contains("nomi") | F.text.contains("Nomi"))
 async def edit_shop_name_start(message: Message, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
@@ -210,7 +210,7 @@ async def show_add_to_homescreen_guide(message: Message):
     )
     await message.answer(text, parse_mode="HTML")
 
-@router.message(StateFilter('*'), F.text.in_(["📥 Excel hisoboti", "📥 Do'kon Excel hisoboti", "📥 Excel hisobot"]))
+@router.message(StateFilter('*'), F.text.contains("Excel"))
 async def send_shop_excel_report(message: Message, bot: Bot, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
@@ -241,7 +241,7 @@ async def send_shop_excel_report(message: Message, bot: Bot, state: FSMContext):
     except Exception as e:
         await message.answer(f"⚠️ Hisobot tayyorlashda xatolik: {e}")
 
-@router.message(StateFilter('*'), F.text.in_(["📲 Ulanish QR kodi", "📲 QR Kod (Ulanish)", "📲 Do'kon QR kodi"]))
+@router.message(StateFilter('*'), F.text.contains("QR") | F.text.contains("Ulanish"))
 async def send_shop_qr_code(message: Message, bot: Bot, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
@@ -348,7 +348,7 @@ async def switch_stats_period(call: CallbackQuery):
 
 # ==================== MIJOZLARNI RO'YXATI VA FILTR ====================
 
-@router.message(StateFilter('*'), F.text.in_(["📋 Qarzdorlar ro'yxati", "📋 Qarzdorlar", "📋 Mijozlar ro'yxati"]))
+@router.message(StateFilter('*'), F.text.contains("Qarzdorlar") | F.text.contains("Mijozlar") | F.text.contains("ro'yxati") | F.text.contains("royxati"))
 async def list_customers_cmd(message: Message, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
