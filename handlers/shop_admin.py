@@ -638,8 +638,8 @@ async def process_debt_amount(message: Message, state: FSMContext):
     await state.set_state(AdminStates.add_debt_desc)
     await message.answer(
         f"Summa: <b>{format_money(amount)}</b>\n\n"
-        f"📝 <b>Olingan tovar yoki xizmat izohini yozing:</b>\n"
-        f"<i>(Masalan: Ko'ylak, Zapchast, Sement, Yog'-shakar, 2 ta kastyum va h.k.)</i>\n\n"
+        f"📝 <b>Qarz sababi, tovar yoki xizmat izohini yozing:</b>\n"
+        f"<i>(Masalan: Ko'ylak, Zapchast, Sement, Mator tuzatish, Ijara, Do'stona qarz va h.k.)</i>\n\n"
         f"Yoki o'tkazib yuborish uchun <code>-</code> yozing:",
         parse_mode="HTML"
     )
@@ -665,10 +665,10 @@ async def process_debt_description(message: Message, state: FSMContext, bot: Bot
     
     msg_text = (
         f"✅ <b>Qarz / Nasiya muvaffaqiyatli yozildi!</b>\n\n"
-        f"👤 Mijoz: <b>{updated_customer['full_name']}</b>\n"
+        f"👤 Qarzdor/Mijoz: <b>{updated_customer['full_name']}</b>\n"
         f"➕ Qo'shilgan summa: <b>{format_money(data['debt_amount'])}</b>\n"
-        f"📦 Tovar / Izoh: <i>{desc or 'Kiritilmadi'}</i>\n"
-        f"💰 Jami qarz/nasiya balansi: <b>{format_money(updated_customer['balance'])}</b>"
+        f"📝 Izoh / Sabab: <i>{desc or 'Kiritilmadi'}</i>\n"
+        f"💰 Jami qarz balansi: <b>{format_money(updated_customer['balance'])}</b>"
     )
     await message.answer(msg_text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa))
     
@@ -676,11 +676,11 @@ async def process_debt_description(message: Message, state: FSMContext, bot: Bot
     if updated_customer['telegram_id']:
         try:
             client_notify = (
-                f"📌 <b>{shop['name']}</b> do'konidan xabar:\n\n"
+                f"📌 <b>«{shop['name']}»</b> hisobingizdan xabar:\n\n"
                 f"Sizning hisobingizga yangi qarz / nasiya yozildi: <b>+{format_money(data['debt_amount'])}</b>\n"
-                f"📦 Tovar / Izoh: <i>{desc or 'Kiritilmadi'}</i>\n"
-                f"💰 Sizning jami qarz/nasiya balansingiz: <b>{format_money(updated_customer['balance'])}</b>\n\n"
-                f"💬 <a href='tg://user?id={shop['admin_id']}'>Do'konchi bilan bog'lanish</a>"
+                f"📝 Izoh / Sabab: <i>{desc or 'Kiritilmadi'}</i>\n"
+                f"💰 Sizning jami balansingiz: <b>{format_money(updated_customer['balance'])}</b>\n\n"
+                f"💬 <a href='tg://user?id={shop['admin_id']}'>Bog'lanish</a>"
             )
             await bot.send_message(chat_id=updated_customer['telegram_id'], text=client_notify, parse_mode="HTML")
         except Exception:

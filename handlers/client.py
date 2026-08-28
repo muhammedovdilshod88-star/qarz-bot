@@ -302,18 +302,22 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
         )
         return
 
-    # 7. Yangi tashrif buyuruvchi (Do'kon ochish / Tiklash taklifi)
+    # 7. Yangi tashrif buyuruvchi (Daftar ochish / Tiklash taklifi)
     promo_text = (
         f"👋 Assalomu alaykum, <b>{user_full_name}</b>!\n\n"
-        f"📒 <b>Do'konlar uchun Qarz va Nasiya Daftari Botiga xush kelibsiz!</b>\n\n"
-        f"Ushbu bot <b>Oziq-ovqat, Kiyim-kechak, Avto ehtiyot qismlar, Qurilish mollari, Kosmetika</b> va boshqa barcha turdagi savdo do'konlari uchun mo'ljallangan.\n\n"
+        f"📒 <b>Qarz va Nasiya Daftari Botiga xush kelibsiz!</b>\n\n"
+        f"Ushbu universal bot quyidagilar uchun mo'ljallangan:\n"
+        f"🏪 <b>Barcha turdagi do'konlar</b> (Oziq-ovqat, Kiyim, Zapchast, Qurilish va h.k.)\n"
+        f"🛠 <b>Ustalar va xizmatlar</b> (Avtoservis, Santexnik, Mebel, Xizmat ko'rsatish)\n"
+        f"👤 <b>Shaxsiy qarz-beruvchilar</b> (Do'stlar, qarindoshlar, ijara, dilerlar)\n\n"
         f"✨ <b>Asosiy imkoniyatlar:</b>\n"
-        f"• Har qanday tovar uchun qarz va nasiyalarni 3 soniyada yozish\n"
-        f"• Xaridorlarga avtomatik Telegram hisobot borishi\n"
-        f"• Kassirlar va sotuvchilarni sherik qilib ulash\n"
+        f"• Qarz va nasiyalarni 3 soniyada kiritish\n"
+        f"• Qarzdorga avtomatik Telegram eslatma yuborish\n"
+        f"• SMS shablon va to'lov muddatlarini belgilash\n"
+        f"• Birgalikda boshqarish uchun sotuvchi/shogirdlarni ulash\n"
         f"• Qarzlarni 1 tiyinigacha aniq nazorat qilish\n\n"
         f"🎁 <b>Siz uchun 1 OY (30 KUN) MUTLAQO BEPUL sinov muddati taqdim etiladi!</b>\n\n"
-        f"O'z do'koningizni ochish yoki mavjud do'konni yangi profilga tiklash uchun tanlang 👇"
+        f"O'z daftaringizni ochish yoki mavjud daftarni yangi profilga tiklash uchun tanlang 👇"
     )
     await message.answer(promo_text, parse_mode="HTML", reply_markup=get_open_store_kb())
 
@@ -406,18 +410,19 @@ async def process_customer_qr_phone(message: Message, state: FSMContext, bot: Bo
     )
     await message.answer(welcome_text, parse_mode="HTML", reply_markup=get_client_main_kb(has_own_shop=has_own_shop))
 
-# ==================== O'Z DO'KONINI OCHISH (TRIAL REGISTER) ====================
+# ==================== O'Z DAFTARINI OCHISH (TRIAL REGISTER) ====================
 
 @router.callback_query(F.data == "start_open_my_store")
 async def start_open_my_store_cb(call: CallbackQuery, state: FSMContext):
     existing = await db.get_shop_by_admin(call.from_user.id)
     if existing:
-        await call.answer("Sizda allaqachon do'kon mavjud!", show_alert=True)
+        await call.answer("Sizda allaqachon daftar/do'kon mavjud!", show_alert=True)
         return
         
     await state.set_state(UserRegisterShop.shop_name)
     await call.message.answer(
-        "🏪 <b>Do'koningiz nomini kiriting:</b>\n<i>(Masalan: Baraka Market, Rayhon Butik, Avto Zapchast, Stroy Material)</i>",
+        "📒 <b>Daftar / Do'kon / Biznes nomini kiriting:</b>\n"
+        "<i>(Masalan: Baraka Market, Usta Jamshid (Avtoservis), Shaxsiy Qarz Daftari, Kvartira Ijarasi)</i>",
         parse_mode="HTML",
         reply_markup=get_cancel_kb()
     )
@@ -427,12 +432,12 @@ async def start_open_my_store_cb(call: CallbackQuery, state: FSMContext):
 async def process_user_shop_name(message: Message, state: FSMContext):
     name = message.text.strip()
     if len(name) < 2:
-        await message.answer("Iltimos, do'kon nomini to'g'ri kiriting:")
+        await message.answer("Iltimos, haqiqiy nom kiriting:")
         return
     await state.update_data(shop_name=name)
     await state.set_state(UserRegisterShop.shop_phone)
     await message.answer(
-        f"Do'kon nomi: <b>{name}</b>\n\nPastdagi <b>«📱 Telefon raqamni ulashish»</b> tugmasini bosing yoki raqamingizni yozing:",
+        f"Daftar/Biznes nomi: <b>{name}</b>\n\nPastdagi <b>«📱 Telefon raqamni ulashish»</b> tugmasini bosing yoki raqamingizni yozing:",
         parse_mode="HTML",
         reply_markup=get_contact_kb()
     )
