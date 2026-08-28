@@ -47,14 +47,14 @@ async def show_staff_menu(message: Message, state: FSMContext):
     
     admins = await db.list_shop_admins(shop['id'])
     staff_count = sum(1 for a in admins if a['role'] == 'staff')
-    can_add = staff_count < 2 # Maksimal 2 ta qo'shimcha sherik
+    can_add = staff_count < 5 # Maksimal 5 ta qo'shimcha sherik
     
     kb = get_staff_list_kb(admins, can_add=can_add)
     text = (
-        f"👥 <b>{shop['name']} — Do'kon Administratorlari</b>\n\n"
-        f"Bu yerda siz do'konni birgalikda boshqarish, qarz yozish va to'lovlarni qabul qilish uchun "
-        f"<b>2 tagacha qo'shimcha sherik (qarindosh yoki sotuvchi)</b> qo'shishingiz mumkin.\n\n"
-        f"Mavjud adminlar:"
+        f"👥 <b>«{shop['name']}» — Boshqaruvchilar (Sheriklar / Yordamchilar)</b>\n\n"
+        f"Bu yerda siz daftarni birgalikda boshqarish, qarz yozish va to'lovlarni qabul qilish uchun "
+        f"<b>5 tagacha qo'shimcha sherik (yordamchi, xodim yoki qarindosh)</b> qo'shishingiz mumkin.\n\n"
+        f"Mavjud boshqaruvchilar:"
     )
     await message.answer(text, reply_markup=kb, parse_mode="HTML")
 
@@ -66,15 +66,15 @@ async def start_add_staff(call: CallbackQuery, bot: Bot):
         return
     
     shop = dict(shop_row)
-    # Faqat asosiy do'kon egasi sherik qo'sha oladi
+    # Faqat asosiy ega sherik qo'sha oladi
     if shop.get('admin_role') == 'staff':
-        await call.answer("⚠️ Faqat asosiy do'kon egasi yangi sotuvchi/sherik qo'sha oladi!", show_alert=True)
+        await call.answer("⚠️ Faqat asosiy hisob egasi yangi sherik qo'sha oladi!", show_alert=True)
         return
         
     admins = await db.list_shop_admins(shop['id'])
     staff_count = sum(1 for a in admins if a['role'] == 'staff')
     if staff_count >= 5:
-        await call.answer("⚠️ Siz allaqachon maksimal (5 ta) sotuvchi/sherik qo'shgansiz!", show_alert=True)
+        await call.answer("⚠️ Siz allaqachon maksimal (5 ta) sherik qo'shgansiz!", show_alert=True)
         return
         
     token = await db.create_staff_invite(shop['id'])
@@ -83,18 +83,18 @@ async def start_add_staff(call: CallbackQuery, bot: Bot):
     
     from urllib.parse import quote
     shop_name = shop['name']
-    invite_text = f"Assalomu alaykum! {shop_name} do'koni admin paneliga ulanish uchun ushbu taklif havolasini bosing:"
+    invite_text = f"Assalomu alaykum! «{shop_name}» qarz daftari boshqaruviga ulanish uchun ushbu taklif havolasini bosing:"
     share_url = f"https://t.me/share/url?url={quote(invite_url)}&text={quote(invite_text)}"
     
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📤 Sotuvchi/Sherikka yuborish", url=share_url)],
+        [InlineKeyboardButton(text="📤 Sherik/Yordamchiga yuborish", url=share_url)],
         [InlineKeyboardButton(text="🔙 Orqaga", callback_data="back_to_staff_list")]
     ])
     
     text = (
-        f"🔗 <b>Yangi sotuvchi / sherik uchun taklif havolasi tayyor!</b>\n\n"
-        f"Ushbu havolani sotuvchingiz yoki qarindoshingizga yuboring. U havolani bitta bosishi bilan avtomatik do'kon administratoriga aylanadi va qarz daftarini yurgiza oladi:\n\n"
+        f"🔗 <b>Yangi sherik / yordamchi uchun taklif havolasi tayyor!</b>\n\n"
+        f"Ushbu havolani sherigingiz yoki yordamchingizga yuboring. U havolani bosishi bilan avtomatik boshqaruvga qo'shiladi va qarz daftarini birgalikda yuritishingiz mumkin:\n\n"
         f"<code>{invite_url}</code>\n\n"
         f"<i>(Bir martalik xavfsiz havola)</i>"
     )
@@ -111,7 +111,7 @@ async def back_to_staff_list_cb(call: CallbackQuery):
     staff_count = sum(1 for a in admins if a['role'] == 'staff')
     can_add = staff_count < 5
     kb = get_staff_list_kb(admins, can_add=can_add)
-    await call.message.edit_text("👥 <b>Do'kon Administratorlari (Sotuvchilar / Sheriklar):</b>", reply_markup=kb, parse_mode="HTML")
+    await call.message.edit_text("👥 <b>Boshqaruvchilar (Sheriklar / Yordamchilar):</b>", reply_markup=kb, parse_mode="HTML")
     await call.answer()
 
 @router.callback_query(F.data.startswith("del_staff_"))
@@ -124,11 +124,11 @@ async def delete_staff_callback(call: CallbackQuery):
         
     shop = dict(shop_row)
     if shop.get('admin_role') == 'staff':
-        await call.answer("⚠️ Faqat asosiy do'kon egasi sotuvchini o'chira oladi!", show_alert=True)
+        await call.answer("⚠️ Faqat asosiy hisob egasi sherikni o'chira oladi!", show_alert=True)
         return
         
     await db.delete_shop_staff(staff_id, shop['id'])
-    await call.answer("Sotuvchi o'chirildi!", show_alert=True)
+    await call.answer("Sherik o'chirildi!", show_alert=True)
     
     admins = await db.list_shop_admins(shop['id'])
     staff_count = sum(1 for a in admins if a['role'] == 'staff')
@@ -419,18 +419,18 @@ async def send_customer_reminder(call: CallbackQuery, bot: Bot):
         return
         
     shop = await db.get_shop_by_id(customer['shop_id'])
-    shop_name = shop['name'] if shop else "Do'kon"
+    shop_name = shop['name'] if shop else "Qarz beruvchi"
     
     if not customer['telegram_id']:
-        await call.answer("⚠️ Mijoz hali botga ulanmagan! Pastdagi '📲 SMS shabloni' orqali yuborishingiz mumkin.", show_alert=True)
+        await call.answer("⚠️ Qarzdor hali botga ulanmagan! Pastdagi '📲 SMS shabloni' orqali yuborishingiz mumkin.", show_alert=True)
         return
         
     # Madaniyatli va rasmiy eslatma matni
     reminder_msg = (
         f"🔔 <b>Hurmatli {customer['full_name']}!</b>\n\n"
-        f"<b>«{shop_name}»</b> do'konidagi qarz va nasiya hisobingiz bo'yicha joriy qoldiq: <b>{format_money(customer['balance'])}</b>.\n\n"
-        f"💳 <i>Imkoningiz bo'lganda to'lovni amalga oshirishingizni so'raymiz. Xaridingiz uchun rahmat!</i>\n\n"
-        f"💬 <a href='tg://user?id={shop['admin_id']}'>Do'konchi bilan bog'lanish</a>"
+        f"<b>«{shop_name}»</b> dagi qarz va nasiya hisobingiz bo'yicha joriy qoldiq: <b>{format_money(customer['balance'])}</b>.\n\n"
+        f"💳 <i>Imkoningiz bo'lganda to'lovni amalga oshirishingizni so'raymiz. Rahmat!</i>\n\n"
+        f"💬 <a href='tg://user?id={shop['admin_id']}'>Qarz beruvchi bilan bog'lanish</a>"
     )
     
     try:
@@ -446,12 +446,12 @@ async def start_set_due_date(call: CallbackQuery):
     customer_id = int(call.data.split("_")[1])
     customer = await db.get_customer(customer_id)
     if not customer:
-        await call.answer("Mijoz topilmadi!", show_alert=True)
+        await call.answer("Qarzdor topilmadi!", show_alert=True)
         return
         
     text = (
         f"📅 <b>{customer['full_name']}</b> uchun to'lov muddatini tanlang:\n\n"
-        f"<i>(Belgilangan muddat kelganda bot mijozga avtomatik eslatma yuboradi)</i>"
+        f"<i>(Belgilangan muddat kelganda bot qarzdorga avtomatik eslatma yuboradi)</i>"
     )
     await call.message.edit_text(text, reply_markup=get_due_date_select_kb(customer_id), parse_mode="HTML")
     await call.answer()
@@ -477,16 +477,16 @@ async def show_sms_template(call: CallbackQuery):
     customer_id = int(call.data.split("_")[1])
     customer = await db.get_customer(customer_id)
     if not customer:
-        await call.answer("Mijoz topilmadi!", show_alert=True)
+        await call.answer("Qarzdor topilmadi!", show_alert=True)
         return
         
     shop = await db.get_shop_by_id(customer['shop_id'])
-    shop_name = shop['name'] if shop else "Do'kon"
+    shop_name = shop['name'] if shop else "Qarz beruvchi"
     phone = customer['phone'] or ""
     
     sms_text = (
         f"Assalomu alaykum, {customer['full_name']}! "
-        f"'{shop_name}' do'konidagi qarz/nasiyangiz: {format_money(customer['balance'])}. "
+        f"'{shop_name}' dagi qarz/nasiya hisobingiz: {format_money(customer['balance'])}. "
         f"Imkoningiz bo'lganda to'lovni amalga oshirishingizni so'raymiz. Rahmat!"
     )
     
@@ -501,7 +501,7 @@ async def show_sms_template(call: CallbackQuery):
     buttons.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data=f"view_cust_{customer_id}")])
     
     text = (
-        f"📲 <b>Mijoz uchun tayyor SMS shabloni:</b>\n\n"
+        f"📲 <b>Qarzdor uchun tayyor SMS shabloni:</b>\n\n"
         f"<code>{sms_text}</code>\n\n"
         f"<i>(Matn ustiga bosing — nusxalanadi va telefondan SMS qilib yuborishingiz mumkin)</i>"
     )
@@ -771,15 +771,15 @@ async def process_payment_amount(message: Message, state: FSMContext, bot: Bot):
     )
     await message.answer(msg_text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa))
     
-    # Mijozga telegram orqali to'lov xabarini yuborish
+    # Qarzdorga telegram orqali to'lov xabarini yuborish
     if updated_customer['telegram_id']:
         try:
             client_notify = (
-                f"✅ <b>{shop['name']}</b> do'konidan xabar:\n\n"
+                f"✅ <b>«{shop['name']}»</b> hisobingizdan xabar:\n\n"
                 f"Sizning <b>{format_money(amount)}</b> to'lovingiz qabul qilindi.\n"
                 f"💰 Qolgan qarz balansingiz: <b>{format_money(updated_customer['balance'])}</b>\n"
                 f"Rahmat!\n\n"
-                f"💬 <a href='tg://user?id={shop['admin_id']}'>Do'konchi bilan Telegramda bog'lanish</a>"
+                f"💬 <a href='tg://user?id={shop['admin_id']}'>Qarz beruvchi bilan bog'lanish</a>"
             )
             await bot.send_message(chat_id=updated_customer['telegram_id'], text=client_notify, parse_mode="HTML")
         except Exception:

@@ -6,12 +6,12 @@ def format_money(amount: float) -> str:
 
 def get_admin_main_kb(is_superadmin: bool = False, days_left: int = 30) -> ReplyKeyboardMarkup:
     buttons = [
-        [KeyboardButton(text="📋 Mijozlar ro'yxati"), KeyboardButton(text="➕ Yangi mijoz")],
+        [KeyboardButton(text="📋 Qarzdorlar ro'yxati"), KeyboardButton(text="➕ Yangi qo'shish")],
         [KeyboardButton(text="🔍 Qidirish"), KeyboardButton(text="📊 Statistika")],
-        [KeyboardButton(text="📥 Do'kon Excel hisoboti"), KeyboardButton(text="📲 Do'kon QR kodi")],
-        [KeyboardButton(text="👥 Sheriklar (Adminlar)"), KeyboardButton(text="⚙️ Do'kon nomi")],
+        [KeyboardButton(text="📥 Excel hisoboti"), KeyboardButton(text="📲 Ulanish QR kodi")],
+        [KeyboardButton(text="👥 Sheriklar (Adminlar)"), KeyboardButton(text="⚙️ Daftar nomi")],
         [KeyboardButton(text=f"⏳ Obuna: {days_left} kun qoldi")],
-        [KeyboardButton(text="👤 Shaxsiy qarzlarim (Xaridor rejimi)")],
+        [KeyboardButton(text="👤 Shaxsiy qarzlarim (Qarz oluvchi rejimi)")],
         [KeyboardButton(text="📲 Ekranga znachok qilish")],
     ]
     if is_superadmin:
@@ -39,8 +39,8 @@ def get_subscription_kb() -> InlineKeyboardMarkup:
 def get_open_store_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🏪 O'z do'konimni ochish (30 kun BEPUL)", callback_data="start_open_my_store")],
-            [InlineKeyboardButton(text="🔐 Do'konimni tiklash (Telefon orqali)", callback_data="start_recover_my_store")]
+            [InlineKeyboardButton(text="📒 Yangi Qarz Daftarimni ochish (30 kun BEPUL)", callback_data="start_open_my_store")],
+            [InlineKeyboardButton(text="🔐 Daftarni tiklash (Telefon orqali)", callback_data="start_recover_my_store")]
         ]
     )
 

@@ -86,10 +86,10 @@ async def due_reminder_scheduler(bot: Bot):
                     due_date_str = str(c['due_date'])[:10]
                     text = (
                         f"⏰ <b>Hurmatli {c['full_name']}!</b>\n\n"
-                        f"<b>«{c['shop_name']}»</b> do'konidagi kelishilgan to'lov muddati (<code>{due_date_str}</code>) yetib keldi.\n"
+                        f"<b>«{c['shop_name']}»</b> dagi kelishilgan to'lov muddati (<code>{due_date_str}</code>) yetib keldi.\n"
                         f"💰 Joriy qarz/nasiya balansingiz: <b>{c['balance']:,.0f} so'm</b>.\n\n"
-                        f"💳 <i>Imkoningiz bo'lganda to'lovni amalga oshirishingizni so'raymiz. Xaridingiz uchun rahmat!</i>\n"
-                        f"💬 <a href='tg://user?id={c['shop_admin_id']}'>Do'konchi bilan bog'lanish</a>"
+                        f"💳 <i>Imkoningiz bo'lganda to'lovni amalga oshirishingizni so'raymiz. Rahmat!</i>\n"
+                        f"💬 <a href='tg://user?id={c['shop_admin_id']}'>Qarz beruvchi bilan bog'lanish</a>"
                     )
                     await bot.send_message(chat_id=c['telegram_id'], text=text, parse_mode="HTML")
                 except Exception:

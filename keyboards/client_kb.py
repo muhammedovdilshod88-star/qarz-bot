@@ -7,7 +7,7 @@ def get_client_main_kb(has_own_shop: bool = False) -> ReplyKeyboardMarkup:
         [KeyboardButton(text="🔄 Yangilash")]
     ]
     if has_own_shop:
-        buttons.append([KeyboardButton(text="🏪 Mening do'konim (Do'konchi rejimi)")])
+        buttons.append([KeyboardButton(text="📒 Mening daftarim (Qarz beruvchi rejimi)")])
     buttons.append([KeyboardButton(text="📲 Ekranga znachok qilish")])
     
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
