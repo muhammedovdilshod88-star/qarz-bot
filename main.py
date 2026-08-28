@@ -117,11 +117,17 @@ async def keep_alive_pinger():
             pass
 
 async def main():
-    logger.info("Ma'lumotlar bazasi initsializatsiya qilinmoqda...")
-    await db.init_db()
-
-    # Render port tekshiruvi uchun web serverni yoqish
+    # Render port tekshiruvi uchun web serverni ENG BIRINCHI navbatda yoqish
+    logger.info("Render Health check server ishga tushirilmoqda...")
     await start_web_server()
+
+    # Ma'lumotlar bazasi initsializatsiyasi
+    logger.info("Ma'lumotlar bazasi initsializatsiya qilinmoqda...")
+    try:
+        await db.init_db()
+        logger.info("Ma'lumotlar bazasi muvaffaqiyatli ulandi.")
+    except Exception as e:
+        logger.error(f"DB initsializatsiya xatosi: {e}")
 
     # Bot va Dispatcher yaratish
     bot = Bot(token=config.BOT_TOKEN)
