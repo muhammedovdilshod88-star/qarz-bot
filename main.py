@@ -101,6 +101,21 @@ async def due_reminder_scheduler(bot: Bot):
             logger.error(f"Due reminder scheduler xatosi: {e}")
             await asyncio.sleep(60)
 
+import aiohttp
+
+async def keep_alive_pinger():
+    """Render Web Service uxlamasligi uchun o'zini-o'zi har 4 daqiqada uyg'otib turuvchi tizim"""
+    render_url = os.environ.get("RENDER_EXTERNAL_URL", "http://127.0.0.1:10000")
+    logger.info(f"Keep-alive pinger ishga tushdi: {render_url}")
+    while True:
+        try:
+            await asyncio.sleep(240) # Har 4 daqiqada bir marta ping
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{render_url}/health", timeout=15) as resp:
+                    pass
+        except Exception:
+            pass
+
 async def main():
     logger.info("Ma'lumotlar bazasi initsializatsiya qilinmoqda...")
     await db.init_db()
@@ -117,9 +132,10 @@ async def main():
     dp.include_router(shop_admin.router)
     dp.include_router(client.router)
 
-    # Avtomatik kunlik backup va eslatma vazifalarini fonda yoqish
+    # Avtomatik kunlik backup, muddat eslatmalari va Keep-Alive uyg'otuvchi vazifalarni fonda yoqish
     asyncio.create_task(daily_backup_scheduler(bot))
     asyncio.create_task(due_reminder_scheduler(bot))
+    asyncio.create_task(keep_alive_pinger())
 
     # Global xatoliklar ushlovchisi (Error Handler)
     @dp.error()
