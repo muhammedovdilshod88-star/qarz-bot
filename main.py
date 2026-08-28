@@ -19,14 +19,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 async def handle_health_check(request):
-    return web.Response(text="Bot is running!")
+    return web.Response(text="Bot is running! OK", status=200, content_type="text/plain")
 
 async def start_web_server():
-    """Render Web Service uchun port ochuvchi yengil server"""
+    """Render Web Service uchun port ochuvchi yengil va mustahkam server"""
     port = int(os.environ.get("PORT", 10000))
     app = web.Application()
     app.router.add_get("/", handle_health_check)
+    app.router.add_head("/", handle_health_check)
+    app.router.add_post("/", handle_health_check)
     app.router.add_get("/health", handle_health_check)
+    app.router.add_head("/health", handle_health_check)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", port)
