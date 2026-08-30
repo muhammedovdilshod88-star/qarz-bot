@@ -133,6 +133,14 @@ async def main():
     bot = Bot(token=config.BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
 
+    from aiogram import BaseMiddleware
+    class MessageLoggerMiddleware(BaseMiddleware):
+        async def __call__(self, handler, event, data):
+            if hasattr(event, "text") and event.text:
+                logger.info(f"📩 Xabar keldi [{event.from_user.id} | {event.from_user.full_name}]: {event.text}")
+            return await handler(event, data)
+    dp.message.middleware(MessageLoggerMiddleware())
+
     # Routerlarni ro'yxatdan o'tkazish
     dp.include_router(superadmin.router)
     dp.include_router(shop_admin.router)
