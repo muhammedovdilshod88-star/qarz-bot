@@ -375,8 +375,9 @@ async def get_shop_by_admin(admin_id: int):
         async with pool.acquire() as conn:
             row = await conn.fetchrow("""
                 SELECT s.* FROM shops s
-                JOIN shop_admins sa ON s.id = sa.shop_id
-                WHERE sa.telegram_id = $1
+                LEFT JOIN shop_admins sa ON s.id = sa.shop_id
+                WHERE s.admin_id = $1 OR sa.telegram_id = $1
+                ORDER BY s.id DESC
                 LIMIT 1
             """, admin_id)
             return dict(row) if row else None
@@ -385,10 +386,11 @@ async def get_shop_by_admin(admin_id: int):
             db.row_factory = aiosqlite.Row
             async with db.execute("""
                 SELECT s.* FROM shops s
-                JOIN shop_admins sa ON s.id = sa.shop_id
-                WHERE sa.telegram_id = ?
+                LEFT JOIN shop_admins sa ON s.id = sa.shop_id
+                WHERE s.admin_id = ? OR sa.telegram_id = ?
+                ORDER BY s.id DESC
                 LIMIT 1
-            """, (admin_id,)) as cursor:
+            """, (admin_id, admin_id)) as cursor:
                 row = await cursor.fetchone()
                 return dict(row) if row else None
 
