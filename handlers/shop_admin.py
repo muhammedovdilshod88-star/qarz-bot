@@ -241,7 +241,7 @@ async def send_shop_excel_report(message: Message, bot: Bot, state: FSMContext):
     except Exception as e:
         await message.answer(f"⚠️ Hisobot tayyorlashda xatolik: {e}")
 
-@router.message(StateFilter('*'), F.text.contains("QR") | F.text.contains("Ulanish"))
+@router.message(StateFilter('*'), F.text.contains("QR") | F.text.contains("Ulanish") | F.text.contains("qr") | F.text.contains("ulanish"))
 async def send_shop_qr_code(message: Message, bot: Bot, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
@@ -255,8 +255,6 @@ async def send_shop_qr_code(message: Message, bot: Bot, state: FSMContext):
         return
     
     bot_info = await bot.get_me()
-    qr_bio = generate_shop_qr(bot_info.username, shop['id'])
-    
     from urllib.parse import quote
     shop_link = f"https://t.me/{bot_info.username}?start=shop_{shop['id']}"
     share_url = f"https://t.me/share/url?url={quote(shop_link)}&text={quote('Assalomu alaykum! «' + shop['name'] + '» dagi qarz va hisob-kitoblarimizni kuzatib borish uchun ushbu botga kiring:')}"
@@ -276,10 +274,27 @@ async def send_shop_qr_code(message: Message, bot: Bot, state: FSMContext):
         f"🔗 <b>To'g'ridan-to'g'ri havola:</b>\n<code>{shop_link}</code>"
     )
     
+    sent = False
+    # 1-usul: Mahalliy generator
     try:
+        qr_bio = generate_shop_qr(bot_info.username, shop['id'])
         photo_file = BufferedInputFile(qr_bio.getvalue(), filename=f"shop_{shop['id']}.png")
         await message.answer_photo(photo=photo_file, caption=caption, reply_markup=share_kb, parse_mode="HTML")
-    except Exception:
+        sent = True
+    except Exception as e:
+        pass
+        
+    # 2-usul: Onlayn ultra tezkor QR server
+    if not sent:
+        try:
+            qr_online_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={quote(shop_link)}"
+            await message.answer_photo(photo=qr_online_url, caption=caption, reply_markup=share_kb, parse_mode="HTML")
+            sent = True
+        except Exception:
+            pass
+            
+    # 3-usul: Matn va tugma
+    if not sent:
         await message.answer(caption, reply_markup=share_kb, parse_mode="HTML")
 
 def build_stats_message(shop_name: str, stats: dict) -> str:
@@ -588,7 +603,7 @@ async def delete_customer_callback(call: CallbackQuery):
 
 # ==================== YANGI QARZDOR QO'SHISH ====================
 
-@router.message(StateFilter('*'), F.text.in_(["➕ Yangi qo'shish", "➕ Yangi mijoz", "➕ Qo'shish"]))
+@router.message(StateFilter('*'), F.text.contains("Yangi") | F.text.contains("shish") | F.text.contains("Qo'shish") | F.text.contains("qo'shish"))
 async def add_customer_start(message: Message, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
