@@ -38,7 +38,7 @@ async def cancel_action(message: Message, state: FSMContext):
 
 # ==================== SHERIKLAR (ADMINLAR) BOSHQARUVI ====================
 
-@router.message(StateFilter('*'), F.text.contains("Sheriklar"))
+@router.message(StateFilter('*'), F.text.func(lambda t: t and any(k in t.lower() for k in ["sherik", "adminlar"])))
 async def show_staff_menu(message: Message, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
@@ -143,7 +143,7 @@ async def back_to_admin_panel(call: CallbackQuery):
 
 # ==================== DO'KON MA'LUMOTLARI VA SOZLAMALAR ====================
 
-@router.message(StateFilter('*'), F.text.contains("nomi") | F.text.contains("Nomi"))
+@router.message(StateFilter('*'), F.text.func(lambda t: t and any(k in t.lower() for k in ["daftar nomi", "do'kon nomi", "nomi"])))
 async def edit_shop_name_start(message: Message, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
@@ -173,7 +173,7 @@ async def process_shop_name_change(message: Message, state: FSMContext):
 
 from keyboards.admin_kb import get_subscription_kb
 
-@router.message(StateFilter('*'), F.text.contains("Obuna"))
+@router.message(StateFilter('*'), F.text.func(lambda t: t and "obuna" in t.lower()))
 async def show_subscription_info(message: Message, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
@@ -197,7 +197,7 @@ async def show_subscription_info(message: Message, state: FSMContext):
     )
     await message.answer(text, parse_mode="HTML", reply_markup=get_subscription_kb())
 
-@router.message(StateFilter('*'), F.text == "📲 Ekranga znachok qilish")
+@router.message(StateFilter('*'), F.text.func(lambda t: t and "znachok" in t.lower()))
 async def show_add_to_homescreen_guide(message: Message):
     text = (
         "📲 <b>Botni telefon ekraniga Znachok (Ilova) qilish qo'llanmasi:</b>\n\n"
@@ -210,7 +210,7 @@ async def show_add_to_homescreen_guide(message: Message):
     )
     await message.answer(text, parse_mode="HTML")
 
-@router.message(StateFilter('*'), F.text.contains("Excel"))
+@router.message(StateFilter('*'), F.text.func(lambda t: t and any(k in t.lower() for k in ["excel", "hisobot"])))
 async def send_shop_excel_report(message: Message, bot: Bot, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
@@ -241,7 +241,7 @@ async def send_shop_excel_report(message: Message, bot: Bot, state: FSMContext):
     except Exception as e:
         await message.answer(f"⚠️ Hisobot tayyorlashda xatolik: {e}")
 
-@router.message(StateFilter('*'), F.text.contains("QR") | F.text.contains("Ulanish") | F.text.contains("qr") | F.text.contains("ulanish"))
+@router.message(StateFilter('*'), F.text.func(lambda t: t and any(k in t.lower() for k in ["qr", "ulanish"])))
 async def send_shop_qr_code(message: Message, bot: Bot, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
@@ -331,7 +331,7 @@ def build_stats_message(shop_name: str, stats: dict) -> str:
         f"👇 <i>Boshqa davrni ko'rish uchun quyidagi tugmalarni bosing:</i>"
     )
 
-@router.message(StateFilter('*'), F.text == "📊 Statistika")
+@router.message(StateFilter('*'), F.text.func(lambda t: t and "statistika" in t.lower()))
 async def show_shop_statistics(message: Message, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
@@ -363,7 +363,7 @@ async def switch_stats_period(call: CallbackQuery):
 
 # ==================== MIJOZLARNI RO'YXATI VA FILTR ====================
 
-@router.message(StateFilter('*'), F.text.contains("Qarzdorlar") | F.text.contains("Mijozlar") | F.text.contains("ro'yxati") | F.text.contains("royxati"))
+@router.message(StateFilter('*'), F.text.func(lambda t: t and any(k in t.lower() for k in ["qarzdor", "mijoz", "yxati"])))
 async def list_customers_cmd(message: Message, state: FSMContext):
     await state.clear()
     shop = await db.get_shop_by_admin(message.from_user.id)
@@ -830,7 +830,7 @@ async def process_payment_amount(message: Message, state: FSMContext, bot: Bot):
 
 # ==================== QIDIRUV ====================
 
-@router.message(StateFilter('*'), F.text.in_(["🔍 Qidirish", "🔍 Qidiruv"]))
+@router.message(StateFilter('*'), F.text.func(lambda t: t and "qidir" in t.lower()))
 async def search_customer_start(message: Message, state: FSMContext):
     shop = await db.get_shop_by_admin(message.from_user.id)
     if not shop:
