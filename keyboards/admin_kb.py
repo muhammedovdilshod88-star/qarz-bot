@@ -152,10 +152,6 @@ def get_customer_actions_kb(customer_id: int, bot_username: str, shop_id: int, p
     ]
     if telegram_id:
         comm_row.append(InlineKeyboardButton(text="💬 Telegramiga yozish", url=f"tg://user?id={telegram_id}"))
-    elif phone:
-        clean_phone = "".join([c for c in phone if c.isdigit()])
-        if clean_phone:
-            comm_row.append(InlineKeyboardButton(text="💬 Telegrami", url=f"https://t.me/+{clean_phone}"))
             
     rows.append(comm_row)
             
