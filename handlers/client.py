@@ -25,7 +25,10 @@ class UserRecoverShop(StatesGroup):
 class CustomerRegisterState(StatesGroup):
     waiting_for_phone = State()
 
-@router.message(StateFilter(UserRegisterShop, UserRecoverShop, CustomerRegisterState), F.text.in_(["❌ Bekor qilish", "/cancel"]))
+class UserAuthStates(StatesGroup):
+    waiting_for_global_phone = State()
+
+@router.message(StateFilter(UserRegisterShop, UserRecoverShop, CustomerRegisterState, UserAuthStates), F.text.in_(["❌ Bekor qilish", "/cancel"]))
 async def cancel_user_register_cb(message: Message, state: FSMContext):
     await state.clear()
     promo_text = (
@@ -60,30 +63,30 @@ async def process_user_recover_phone(message: Message, state: FSMContext, bot: B
     shop = await db.get_shop_by_phone(phone)
     if not shop:
         await message.answer(
-            f"⚠️ <b>Daftar topilmadi!</b>\n\n"
-            f"<code>{phone}</code> telefon raqamiga biriktirilgan hisob topilmadi.\n"
-            f"Iltimos, to'g'ri raqam kiriting yoki Adminga murojaat qiling:\n"
-            f"📞 @{config.ADMIN_USERNAME}",
-            parse_mode="HTML"
+            "❌ <b>Bunday telefon raqamga tegishli faol daftar topilmadi!</b>\n\n"
+            "Iltimos, to'g'ri telefon raqamni kiriting yoki yangi daftar oching.",
+            parse_mode="HTML",
+            reply_markup=get_open_store_kb()
         )
+        await state.clear()
         return
         
+    # Do'kon egasini yangi Telegram ID ga almashtiramiz
     user_id = message.from_user.id
     user_full_name = message.from_user.full_name
-    
-    await db.transfer_shop_ownership(shop['id'], user_id, user_full_name)
+    await db.transfer_shop_ownership(shop['id'], user_id, phone)
     await state.clear()
     
     is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
     is_sa = user_id in config.SUPER_ADMIN_IDS
     
-    success_text = (
+    text_success = (
         f"🎉 <b>Daftaringiz muvaffaqiyatli tiklandi!</b>\n\n"
-        f"📒 <b>«{shop['name']}»</b> daftari barcha qarzdorlari va ma'lumotlari bilan ushbu yangi Telegram profilingizga biriktirildi.\n"
-        f"⏳ Obuna muddati: <b>{days_left} kun qoldi</b>.\n\n"
-        f"Xavfsizlik uchun eski hisobingizdan boshqaruv huquqi avtomatik olib tashlandi."
+        f"📒 <b>«{shop['name']}»</b> daftari yangi Telegram profilingizga ulandi.\n"
+        f"Barcha mijozlar, qarzlar va hisobotlar saqlab qolindi.\n"
+        f"⏳ Obuna muddati: <b>{days_left} kun qoldi</b>."
     )
-    await message.answer(success_text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=days_left))
+    await message.answer(text_success, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=days_left))
     
     for sa_id in config.SUPER_ADMIN_IDS:
         try:
@@ -98,6 +101,59 @@ async def process_user_recover_phone(message: Message, state: FSMContext, bot: B
         except Exception:
             pass
 
+# ==================== TELEFON RAQAMNI TASDIQLASH (AUTH GATE) ====================
+
+@router.message(UserAuthStates.waiting_for_global_phone)
+async def process_global_phone_auth(message: Message, state: FSMContext, bot: Bot):
+    if message.contact:
+        phone = message.contact.phone_number
+        if not phone.startswith("+"):
+            phone = "+" + phone
+    else:
+        phone_raw = message.text.strip() if message.text else ""
+        digits = "".join([c for c in phone_raw if c.isdigit()])
+        if len(digits) < 7:
+            await message.answer(
+                "⚠️ Iltimos, pastdagi <b>«📱 Telefon raqamni yuborish»</b> tugmasini bosing yoki to'g'ri telefon raqamingizni kiriting:",
+                parse_mode="HTML"
+            )
+            return
+        phone = phone_raw if phone_raw.startswith("+") else f"+{phone_raw}"
+        
+    user_id = message.from_user.id
+    user_full_name = message.from_user.full_name
+    username = message.from_user.username
+    
+    # 1. Bazaga saqlash
+    await db.save_user(user_id, user_full_name, username, phone)
+    
+    # 2. Avto-link (agar qarz beruvchilar ushbu telefon raqamga qarz yozgan bo'lsa)
+    linked = await db.auto_link_customer_by_phone(user_id, phone, user_full_name)
+    for c in linked:
+        try:
+            shop = await db.get_shop_by_id(c['shop_id'])
+            if shop:
+                await bot.send_message(
+                    chat_id=shop['admin_id'],
+                    text=f"🔔 <b>Qarzdor botga ulandi!</b>\n👤 Ism: <b>{user_full_name}</b>\n📞 Tel: <code>{phone}</code>",
+                    parse_mode="HTML"
+                )
+        except Exception:
+            pass
+            
+    # 3. Oldingi argumentlarni tekshirish (c_..., shop_..., new_shop va h.k.)
+    data = await state.get_data()
+    saved_args = data.get('start_args')
+    await state.clear()
+    
+    await message.answer(
+        f"✅ <b>Telefon raqamingiz muvaffaqiyatli tasdiqlandi:</b> <code>{phone}</code>\n",
+        parse_mode="HTML"
+    )
+    
+    dummy_cmd = CommandObject(prefix="/", command="start", args=saved_args)
+    await cmd_start(message, dummy_cmd, bot, state)
+
 # ==================== ASOSIY START HANDLER ====================
 
 @router.message(Command("cancel"))
@@ -107,10 +163,35 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
     user_id = message.from_user.id
     user_full_name = message.from_user.full_name
     
-    # 1. Super Admin tekshiruvi
+    # 0. MAJBURIY TELEFON RAQAM TEKSHIRUVI (Har qanday yangi odam uchun)
+    db_user = await db.get_user(user_id)
     is_sa = (user_id in config.SUPER_ADMIN_IDS)
+    args = command.args
     
-    # 2. Agar reklama QR kodi orqali yangi hisob ochishga kirayotgan bo'lsa (/start new_shop yoki promo)
+    if not db_user or not db_user.get('phone'):
+        # Agar hali telefon raqami saqlanmagan bo'lsa, majburiy so'raymiz
+        await state.set_state(UserAuthStates.waiting_for_global_phone)
+        if args:
+            await state.update_data(start_args=args)
+            
+        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+        auth_kb = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="📱 Telefon raqamni yuborish", request_contact=True)]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
+        auth_msg = (
+            f"👋 Assalomu alaykum, <b>{user_full_name}</b>!\n\n"
+            f"📒 <b>Qarz va Nasiya Daftari</b> botiga xush kelibsiz.\n\n"
+            f"🔐 Tizimdan to'liq foydalanish, hisob-kitoblarni xavfsiz yuritish va shaxsiy hisobingizni yo'qotmaslik uchun telefon raqamingizni tasdiqlang:\n\n"
+            f"👇 <i>Pastdagi <b>«📱 Telefon raqamni yuborish»</b> tugmasini 1 marta bosing:</i>"
+        )
+        await message.answer(auth_msg, parse_mode="HTML", reply_markup=auth_kb)
+        return
+
+    # 1. Agar reklama QR kodi orqali yangi hisob ochishga kirayotgan bo'lsa (/start new_shop yoki promo)
     args = command.args
     if args in ["new_shop", "promo", "flyer"]:
         existing = await db.get_shop_by_admin(user_id)

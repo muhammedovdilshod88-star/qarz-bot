@@ -102,14 +102,29 @@ async def init_db():
                     created_at TIMESTAMP DEFAULT NOW()
                 )
             """)
-            try:
-                await conn.execute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT 'UZS'")
-            except Exception:
-                pass
+            # 6. Users jadvali (Telefon raqamni majburiy tasdiqlash uchun)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    telegram_id BIGINT PRIMARY KEY,
+                    full_name TEXT,
+                    username TEXT,
+                    phone TEXT,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
         logger.info("PostgreSQL Database muvaffaqiyatli initsializatsiya qilindi!")
     else:
         # Fallback: SQLite
         async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    telegram_id INTEGER PRIMARY KEY,
+                    full_name TEXT,
+                    username TEXT,
+                    phone TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS shops (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -911,4 +926,88 @@ async def get_detailed_shop_statistics(shop_id: int, period: str = 'all') -> dic
     stats['indebted_customers'] = indebted
     stats['clear_customers'] = clear
     return stats
+
+# ==================== USERS & AUTO-LINK BY PHONE ====================
+
+async def get_user(telegram_id: int):
+    if USE_POSTGRES:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM users WHERE telegram_id = $1", telegram_id)
+            return dict(row) if row else None
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)) as cur:
+                row = await cur.fetchone()
+                return dict(row) if row else None
+
+async def save_user(telegram_id: int, full_name: str = None, username: str = None, phone: str = None):
+    if USE_POSTGRES:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO users (telegram_id, full_name, username, phone)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (telegram_id) DO UPDATE 
+                SET full_name = EXCLUDED.full_name,
+                    username = EXCLUDED.username,
+                    phone = COALESCE(EXCLUDED.phone, users.phone)
+            """, telegram_id, full_name, username, phone)
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("""
+                INSERT INTO users (telegram_id, full_name, username, phone)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(telegram_id) DO UPDATE 
+                SET full_name=excluded.full_name,
+                    username=excluded.username,
+                    phone=COALESCE(excluded.phone, users.phone)
+            """, (telegram_id, full_name, username, phone))
+            await db.commit()
+
+async def auto_link_customer_by_phone(telegram_id: int, phone: str, full_name: str = None):
+    """Telefon raqam orqali avval kiritilgan barcha qarz hisoblarini yangi foydalanuvchiga avtomatik ulash"""
+    if not phone:
+        return []
+    clean_digits = "".join([c for c in phone if c.isdigit()])
+    if len(clean_digits) >= 9:
+        last9 = clean_digits[-9:]
+    else:
+        last9 = clean_digits
+        
+    search_pattern = f"%{last9}%"
+    linked = []
+    
+    if USE_POSTGRES:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT c.*, s.name as shop_name, s.admin_id 
+                FROM customers c
+                JOIN shops s ON c.shop_id = s.id
+                WHERE c.telegram_id IS NULL AND c.phone LIKE $1
+            """, search_pattern)
+            for r in rows:
+                await conn.execute("""
+                    UPDATE customers 
+                    SET telegram_id = $1, full_name = COALESCE($2, full_name)
+                    WHERE id = $3
+                """, telegram_id, full_name, r['id'])
+                linked.append(dict(r))
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT c.*, s.name as shop_name, s.admin_id 
+                FROM customers c
+                JOIN shops s ON c.shop_id = s.id
+                WHERE c.telegram_id IS NULL AND c.phone LIKE ?
+            """, (search_pattern,)) as cur:
+                rows = await cur.fetchall()
+                for r in rows:
+                    await db.execute("UPDATE customers SET telegram_id = ?, full_name = COALESCE(?, full_name) WHERE id = ?", (telegram_id, full_name, r['id']))
+                    linked.append(dict(r))
+            await db.commit()
+    return linked
 
