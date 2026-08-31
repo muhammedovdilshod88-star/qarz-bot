@@ -28,7 +28,7 @@ async def superadmin_cancel(message: Message, state: FSMContext):
         await message.answer("Amal bekor qilindi.")
 
 def is_super_admin(user_id: int) -> bool:
-    return not config.SUPER_ADMIN_IDS or user_id in config.SUPER_ADMIN_IDS
+    return bool(config.SUPER_ADMIN_IDS and user_id in config.SUPER_ADMIN_IDS)
 
 @router.message(F.text == "👑 Super Admin Paneli")
 @router.message(F.text == "/superadmin")

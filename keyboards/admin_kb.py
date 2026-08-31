@@ -65,6 +65,26 @@ def get_open_store_kb() -> InlineKeyboardMarkup:
         ]
     )
 
+def get_phone_input_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📱 Telefon raqamni ulashish", request_contact=True)],
+            [KeyboardButton(text="⏩ Raqamsiz davom etish"), KeyboardButton(text="❌ Bekor qilish")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+
+def get_desc_input_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="⏩ Izohsiz saqlash")],
+            [KeyboardButton(text="❌ Bekor qilish")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+
 def get_recovery_contact_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[

@@ -680,12 +680,14 @@ async def process_customer_name(message: Message, state: FSMContext):
         return
     await state.update_data(full_name=name)
     await state.set_state(AdminStates.add_customer_phone)
+    from keyboards.admin_kb import get_phone_input_kb
     await message.answer(
         f"👤 Qarzdor: <b>{name}</b>\n\n"
-        f"📞 Endi uning <b>telefon raqamini</b> kiriting:\n"
-        f"<i>(Masalan: +998901234567 yoki telefon kiritmaslik uchun <b>-</b> belgisini yuboring)</i>",
+        f"📞 Endi uning <b>telefon raqamini</b> yozing:\n"
+        f"<i>(Masalan: +998 90 123 45 67 yoki 901234567)</i>\n\n"
+        f"💡 <i>Agar telefon raqami hozir bo'lmasa, pastdagi <b>«⏩ Raqamsiz davom etish»</b> tugmasini bosing:</i>",
         parse_mode="HTML",
-        reply_markup=get_cancel_kb()
+        reply_markup=get_phone_input_kb()
     )
 
 @router.message(AdminStates.add_customer_phone)
@@ -697,7 +699,10 @@ async def process_customer_phone(message: Message, state: FSMContext, bot: Bot):
                 phone = "+" + phone
         else:
             phone_raw = message.text.strip() if message.text else ""
-            phone = phone_raw if phone_raw != "-" else None
+            if phone_raw in ["-", "⏩ Raqamsiz davom etish", "Raqamsiz davom etish", "raqamsiz"]:
+                phone = None
+            else:
+                phone = phone_raw
         
         data = await state.get_data()
         full_name = data.get('full_name', 'Mijoz')
@@ -798,18 +803,23 @@ async def process_debt_amount(message: Message, state: FSMContext):
     
     await state.update_data(debt_amount=amount)
     await state.set_state(AdminStates.add_debt_desc)
+    from keyboards.admin_kb import get_desc_input_kb
     await message.answer(
         f"Summa: <b>{format_money(amount, currency)}</b>\n\n"
         f"📝 <b>Qarz sababi, tovar yoki xizmat izohini yozing:</b>\n"
-        f"<i>(Masalan: Ko'ylak, Zapchast, Sement, Mator tuzatish, Ijara, Do'stona qarz va h.k.)</i>\n\n"
-        f"Yoki o'tkazib yuborish uchun <code>-</code> yozing:",
-        parse_mode="HTML"
+        f"<i>(Masalan: Kiyim, Zapchast, Sement, Remont, Ijara, Do'stona qarz)</i>\n\n"
+        f"💡 <i>Agar izoh kerak bo'lmasa, pastdagi <b>«⏩ Izohsiz saqlash»</b> tugmasini bosing:</i>",
+        parse_mode="HTML",
+        reply_markup=get_desc_input_kb()
     )
 
 @router.message(AdminStates.add_debt_desc)
 async def process_debt_description(message: Message, state: FSMContext, bot: Bot):
     desc_raw = message.text.strip()
-    desc = desc_raw if desc_raw != "-" else None
+    if desc_raw in ["-", "⏩ Izohsiz saqlash", "Izohsiz saqlash", "izohsiz"]:
+        desc = None
+    else:
+        desc = desc_raw
     
     data = await state.get_data()
     currency = data.get('currency', 'UZS')

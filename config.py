@@ -15,8 +15,7 @@ CARD_HOLDER = "Dilshod M"
 ADMIN_USERNAME = "DilshodMuhammad00"
 
 # Super Admin ID lari (Sizning Telegram ID ingiz)
-# Masalan: [123456789]
-SUPER_ADMIN_IDS = [int(i) for i in os.getenv("SUPER_ADMIN_IDS", "").split(",") if i.strip()]
+SUPER_ADMIN_IDS = list(set([8976731089] + [int(i) for i in os.getenv("SUPER_ADMIN_IDS", "").split(",") if i.strip()]))
 
 # Baza fayli joylashuvi
 DB_PATH = os.path.join(os.path.dirname(__file__), "qarz_daftari.db")
