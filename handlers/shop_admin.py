@@ -415,36 +415,46 @@ from keyboards.admin_kb import get_due_date_select_kb
 
 @router.callback_query(F.data.startswith("view_cust_"))
 async def view_customer_detail(call: CallbackQuery, bot: Bot):
-    customer_id = int(call.data.split("_")[2])
-    customer = await db.get_customer(customer_id)
-    if not customer:
-        await call.answer("Mijoz topilmadi!", show_alert=True)
-        return
-    
-    bot_info = await bot.get_me()
-    status_tg = "✅ Telegram ulangan" if customer['telegram_id'] else "❌ Telegram hali ulanmagan"
-    phone_text = customer['phone'] if customer['phone'] else "Kiritilmagan"
-    due_str = str(customer['due_date'])[:10] if customer.get('due_date') else None
-    due_display = f"📅 <b>To'lov muddati:</b> <code>{due_str}</code> gacha\n" if due_str else ""
-    
-    text = (
-        f"👤 <b>Mijoz:</b> {customer['full_name']}\n"
-        f"📞 <b>Telefon:</b> <code>{phone_text}</code>\n"
-        f"📱 <b>Holat:</b> {status_tg}\n"
-        f"{due_display}"
-        f"💰 <b>Joriy qarz/nasiya balansi:</b> <b>{format_money(customer['balance'])}</b>\n\n"
-        f"Quyidagi amallardan birini tanlang:"
-    )
-    kb = get_customer_actions_kb(
-        customer_id=customer_id, 
-        bot_username=bot_info.username, 
-        shop_id=customer['shop_id'], 
-        phone=customer['phone'],
-        telegram_id=customer.get('telegram_id'),
-        due_date_str=due_str
-    )
-    await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
-    await call.answer()
+    try:
+        customer_id = int(call.data.split("_")[2])
+        customer = await db.get_customer(customer_id)
+        if not customer:
+            await call.answer("Mijoz topilmadi!", show_alert=True)
+            return
+        
+        import html
+        bot_info = await bot.get_me()
+        status_tg = "✅ Telegram ulangan" if customer.get('telegram_id') else "❌ Telegram hali ulanmagan"
+        phone_text = str(customer['phone']) if customer.get('phone') else "Kiritilmagan"
+        due_str = str(customer['due_date'])[:10] if customer.get('due_date') else None
+        due_display = f"📅 <b>To'lov muddati:</b> <code>{due_str}</code> gacha\n" if due_str else ""
+        safe_name = html.escape(str(customer.get('full_name', 'Mijoz')))
+        safe_phone = html.escape(phone_text)
+        
+        text = (
+            f"👤 <b>Mijoz:</b> {safe_name}\n"
+            f"📞 <b>Telefon:</b> <code>{safe_phone}</code>\n"
+            f"📱 <b>Holat:</b> {status_tg}\n"
+            f"{due_display}"
+            f"💰 <b>Joriy qarz/nasiya balansi:</b> <b>{format_money(customer.get('balance', 0))}</b>\n\n"
+            f"Quyidagi amallardan birini tanlang:"
+        )
+        kb = get_customer_actions_kb(
+            customer_id=customer_id, 
+            bot_username=bot_info.username, 
+            shop_id=customer['shop_id'], 
+            phone=customer.get('phone'),
+            telegram_id=customer.get('telegram_id'),
+            due_date_str=due_str
+        )
+        try:
+            await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            await call.message.answer(text, reply_markup=kb, parse_mode="HTML")
+        await call.answer()
+    except Exception as e:
+        logger.error(f"view_customer_detail xatosi: {e}")
+        await call.answer(f"⚠️ Xatolik: {e}", show_alert=True)
 
 # ==================== 1. TELEGRAM ORQALI ESLATISH ====================
 
