@@ -661,31 +661,52 @@ async def process_customer_name(message: Message, state: FSMContext):
 
 @router.message(AdminStates.add_customer_phone)
 async def process_customer_phone(message: Message, state: FSMContext, bot: Bot):
-    phone_raw = message.text.strip()
-    phone = phone_raw if phone_raw != "-" else None
-    
-    data = await state.get_data()
-    shop = await db.get_shop_by_admin(message.from_user.id)
-    
-    cust_id = await db.add_manual_customer(shop['id'], data['full_name'], phone)
-    await state.clear()
-    
-    bot_info = await bot.get_me()
-    is_sa = message.from_user.id in config.SUPER_ADMIN_IDS
-    
-    await message.answer(
-        f"✅ Yangi mijoz muvaffaqiyatli qo'shildi:\n👤 <b>{data['full_name']}</b>\n📞 {phone or 'Kiritilmadi'}",
-        parse_mode="HTML",
-        reply_markup=get_admin_main_kb(is_sa)
-    )
-    
-    # Taklif yuborish tugmalarini ham chiqarib beramiz
-    kb = get_customer_actions_kb(cust_id, bot_info.username, shop['id'], phone)
-    await message.answer(
-        f"💡 <b>{data['full_name']}</b> ga bot havolasini yuborish yoki qarz yozish uchun:",
-        reply_markup=kb,
-        parse_mode="HTML"
-    )
+    try:
+        if message.contact:
+            phone = message.contact.phone_number
+            if not phone.startswith("+"):
+                phone = "+" + phone
+        else:
+            phone_raw = message.text.strip() if message.text else ""
+            phone = phone_raw if phone_raw != "-" else None
+        
+        data = await state.get_data()
+        full_name = data.get('full_name', 'Mijoz')
+        shop = await db.get_shop_by_admin(message.from_user.id)
+        if not shop:
+            await message.answer("⚠️ Daftaringiz topilmadi. Iltimos /start ni bosing.")
+            await state.clear()
+            return
+            
+        cust_id = await db.add_customer(shop['id'], full_name, phone)
+        await state.clear()
+        
+        bot_info = await bot.get_me()
+        is_sa = message.from_user.id in config.SUPER_ADMIN_IDS
+        
+        import html
+        safe_name = html.escape(full_name)
+        safe_phone = html.escape(phone) if phone else "Kiritilmadi"
+        
+        await message.answer(
+            f"🎉 <b>Yangi qarzdor muvaffaqiyatli qo'shildi!</b>\n\n"
+            f"👤 Ismi: <b>{safe_name}</b>\n"
+            f"📞 Telefoni: <code>{safe_phone}</code>\n"
+            f"💰 Joriy qarzi: <b>0 so'm</b>",
+            parse_mode="HTML",
+            reply_markup=get_admin_main_kb(is_sa)
+        )
+        
+        kb = get_customer_actions_kb(cust_id, bot_info.username, shop['id'], phone)
+        await message.answer(
+            f"👇 <b>{safe_name}</b> ga qarz yozish yoki amalni tanlang:",
+            reply_markup=kb,
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.error(f"process_customer_phone xatosi: {e}")
+        await message.answer(f"⚠️ Qarzdor qo'shishda xatolik yuz berdi: {e}")
+        await state.clear()
 
 # ==================== QARZ YOZISH (SUMMA + IZOH) ====================
 

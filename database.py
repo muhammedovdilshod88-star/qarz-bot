@@ -545,6 +545,8 @@ async def add_customer(shop_id: int, full_name: str, phone: str = None, telegram
             await db.commit()
             return cursor.lastrowid
 
+add_manual_customer = add_customer
+
 async def register_telegram_customer(shop_id: int, telegram_id: int, full_name: str, phone: str = None):
     if USE_POSTGRES:
         pool = await get_db_pool()
