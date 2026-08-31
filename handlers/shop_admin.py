@@ -767,29 +767,57 @@ async def process_debt_description(message: Message, state: FSMContext, bot: Bot
     
     await state.clear()
     is_sa = message.from_user.id in config.SUPER_ADMIN_IDS
+    bot_info = await bot.get_me()
+    
+    import html
+    from urllib.parse import quote
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    
+    safe_name = html.escape(str(updated_customer['full_name']))
     
     msg_text = (
         f"✅ <b>Qarz / Nasiya muvaffaqiyatli yozildi!</b>\n\n"
-        f"👤 Qarzdor/Mijoz: <b>{updated_customer['full_name']}</b>\n"
+        f"👤 Qarzdor/Mijoz: <b>{safe_name}</b>\n"
         f"➕ Qo'shilgan summa: <b>{format_money(data['debt_amount'])}</b>\n"
-        f"📝 Izoh / Sabab: <i>{desc or 'Kiritilmadi'}</i>\n"
+        f"📝 Izoh / Sabab: <i>{html.escape(desc) if desc else 'Kiritilmadi'}</i>\n"
         f"💰 Jami qarz balansi: <b>{format_money(updated_customer['balance'])}</b>"
     )
-    await message.answer(msg_text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa))
     
-    # Agar mijoz telegram orqali ulangan bo'lsa, unga bildirishnoma yuboramiz
-    if updated_customer['telegram_id']:
+    # Agar mijoz hali botga ulanmagan bo'lsa, Telegram orqali yuborish tugmasini chiqaramiz
+    notify_kb = None
+    if not updated_customer.get('telegram_id'):
+        cust_link = f"https://t.me/{bot_info.username}?start=c_{updated_customer['id']}"
+        share_text = (
+            f"Assalomu alaykum, {updated_customer['full_name']}!\n\n"
+            f"«{shop['name']}» da sizning hisobingizga yangi qarz/nasiya yozildi: +{format_money(data['debt_amount'])}\n"
+            f"📝 Izoh: {desc or 'Xarid'}\n"
+            f"💰 Jami qarzingiz: {format_money(updated_customer['balance'])}\n\n"
+            f"Hisob-kitobni bot orqali kuzatib borish uchun ushbu havolani bosing:\n{cust_link}"
+        )
+        share_url = f"https://t.me/share/url?url={quote(cust_link)}&text={quote(share_text)}"
+        notify_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="📤 Qarzdorga Telegramdan hisobni yuborish", url=share_url)],
+                [InlineKeyboardButton(text="👤 Qarzdor sahifasini ochish", callback_data=f"view_cust_{updated_customer['id']}")]
+            ]
+        )
+    else:
+        # Allaqachon ulangan bo'lsa avtomatik xabar ketadi
         try:
             client_notify = (
                 f"📌 <b>«{shop['name']}»</b> hisobingizdan xabar:\n\n"
                 f"Sizning hisobingizga yangi qarz / nasiya yozildi: <b>+{format_money(data['debt_amount'])}</b>\n"
-                f"📝 Izoh / Sabab: <i>{desc or 'Kiritilmadi'}</i>\n"
+                f"📝 Izoh / Sabab: <i>{html.escape(desc) if desc else 'Kiritilmadi'}</i>\n"
                 f"💰 Sizning jami balansingiz: <b>{format_money(updated_customer['balance'])}</b>\n\n"
                 f"💬 <a href='tg://user?id={shop['admin_id']}'>Bog'lanish</a>"
             )
             await bot.send_message(chat_id=updated_customer['telegram_id'], text=client_notify, parse_mode="HTML")
         except Exception:
             pass
+
+    await message.answer(msg_text, parse_mode="HTML", reply_markup=notify_kb or get_admin_main_kb(is_sa))
+    if notify_kb:
+        await message.answer("Boshqaruv menyusi:", reply_markup=get_admin_main_kb(is_sa))
 
 # ==================== TO'LOV QABUL QILISH ====================
 
@@ -836,17 +864,40 @@ async def process_payment_amount(message: Message, state: FSMContext, bot: Bot):
     
     await state.clear()
     is_sa = message.from_user.id in config.SUPER_ADMIN_IDS
+    bot_info = await bot.get_me()
+    
+    import html
+    from urllib.parse import quote
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    
+    safe_name = html.escape(str(updated_customer['full_name']))
     
     msg_text = (
         f"✅ <b>To'lov qabul qilindi!</b>\n\n"
-        f"👤 Mijoz: <b>{updated_customer['full_name']}</b>\n"
+        f"👤 Mijoz: <b>{safe_name}</b>\n"
         f"➖ Qabul qilingan to'lov: <b>{format_money(amount)}</b>\n"
         f"💰 Qolgan qarz balansi: <b>{format_money(updated_customer['balance'])}</b>"
     )
-    await message.answer(msg_text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa))
     
-    # Qarzdorga telegram orqali to'lov xabarini yuborish
-    if updated_customer['telegram_id']:
+    # Agar mijoz hali ulanmagan bo'lsa, Telegramdan to'lov chekini jo'natish tugmasi
+    notify_kb = None
+    if not updated_customer.get('telegram_id'):
+        cust_link = f"https://t.me/{bot_info.username}?start=c_{updated_customer['id']}"
+        share_text = (
+            f"Assalomu alaykum, {updated_customer['full_name']}!\n\n"
+            f"«{shop['name']}» da sizning {format_money(amount)} to'lovingiz qabul qilindi.\n"
+            f"💰 Qolgan qarz balansingiz: {format_money(updated_customer['balance'])}\n"
+            f"Rahmat!\n\n"
+            f"Hisobingizni botda kuzatib borish uchun:\n{cust_link}"
+        )
+        share_url = f"https://t.me/share/url?url={quote(cust_link)}&text={quote(share_text)}"
+        notify_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="📤 Qarzdorga Telegramdan to'lov chekini yuborish", url=share_url)],
+                [InlineKeyboardButton(text="👤 Qarzdor sahifasini ochish", callback_data=f"view_cust_{updated_customer['id']}")]
+            ]
+        )
+    else:
         try:
             client_notify = (
                 f"✅ <b>«{shop['name']}»</b> hisobingizdan xabar:\n\n"
@@ -858,6 +909,10 @@ async def process_payment_amount(message: Message, state: FSMContext, bot: Bot):
             await bot.send_message(chat_id=updated_customer['telegram_id'], text=client_notify, parse_mode="HTML")
         except Exception:
             pass
+            
+    await message.answer(msg_text, parse_mode="HTML", reply_markup=notify_kb or get_admin_main_kb(is_sa))
+    if notify_kb:
+        await message.answer("Boshqaruv menyusi:", reply_markup=get_admin_main_kb(is_sa))
 
 # ==================== QIDIRUV ====================
 
