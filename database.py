@@ -67,7 +67,7 @@ async def init_db():
                 )
             """)
 
-            # 4. Customers jadvali (due_date bilan)
+            # 4. Customers jadvali (due_date va balance_usd bilan)
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS customers (
                     id SERIAL PRIMARY KEY,
@@ -76,6 +76,7 @@ async def init_db():
                     full_name TEXT NOT NULL,
                     phone TEXT,
                     balance DOUBLE PRECISION DEFAULT 0.0,
+                    balance_usd DOUBLE PRECISION DEFAULT 0.0,
                     due_date TIMESTAMP,
                     created_at TIMESTAMP DEFAULT NOW(),
                     UNIQUE(shop_id, telegram_id)
@@ -84,21 +85,27 @@ async def init_db():
             # Ustun mavjud bo'lmasa qo'shish
             try:
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS due_date TIMESTAMP")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS balance_usd DOUBLE PRECISION DEFAULT 0.0")
             except Exception:
                 pass
 
-            # 5. Transactions jadvali
+            # 5. Transactions jadvali (currency bilan)
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS transactions (
                     id SERIAL PRIMARY KEY,
                     shop_id INT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
                     customer_id INT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
                     amount DOUBLE PRECISION NOT NULL,
+                    currency VARCHAR(10) DEFAULT 'UZS',
                     type TEXT NOT NULL,
                     description TEXT,
                     created_at TIMESTAMP DEFAULT NOW()
                 )
             """)
+            try:
+                await conn.execute("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT 'UZS'")
+            except Exception:
+                pass
         logger.info("PostgreSQL Database muvaffaqiyatli initsializatsiya qilindi!")
     else:
         # Fallback: SQLite
@@ -147,17 +154,28 @@ async def init_db():
                     full_name TEXT NOT NULL,
                     phone TEXT,
                     balance REAL DEFAULT 0.0,
+                    balance_usd REAL DEFAULT 0.0,
+                    due_date TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY(shop_id) REFERENCES shops(id),
                     UNIQUE(shop_id, telegram_id)
                 )
             """)
+            try:
+                await db.execute("ALTER TABLE customers ADD COLUMN balance_usd REAL DEFAULT 0.0")
+            except Exception:
+                pass
+            try:
+                await db.execute("ALTER TABLE customers ADD COLUMN due_date TIMESTAMP")
+            except Exception:
+                pass
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS transactions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     shop_id INTEGER NOT NULL,
                     customer_id INTEGER NOT NULL,
                     amount REAL NOT NULL,
+                    currency TEXT DEFAULT 'UZS',
                     type TEXT NOT NULL,
                     description TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -165,6 +183,10 @@ async def init_db():
                     FOREIGN KEY(customer_id) REFERENCES customers(id)
                 )
             """)
+            try:
+                await db.execute("ALTER TABLE transactions ADD COLUMN currency TEXT DEFAULT 'UZS'")
+            except Exception:
+                pass
             await db.commit()
 
 # ==================== SHOPS & ADMINS (DO'KONLAR VA SHERIKLAR) ====================
@@ -731,31 +753,45 @@ async def delete_customer(customer_id: int):
 
 # ==================== TRANSACTIONS & STATS ====================
 
-async def add_transaction(shop_id: int, customer_id: int, amount: float, tx_type: str, description: str = None):
+async def add_transaction(shop_id: int, customer_id: int, amount: float, tx_type: str, description: str = None, currency: str = 'UZS'):
     balance_delta = amount if tx_type == 'debt' else -amount
+    currency = currency.upper() if currency else 'UZS'
+    
     if USE_POSTGRES:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute("""
-                    INSERT INTO transactions (shop_id, customer_id, amount, type, description)
-                    VALUES ($1, $2, $3, $4, $5)
-                """, shop_id, customer_id, amount, tx_type, description)
-                row = await conn.fetchrow("""
-                    UPDATE customers 
-                    SET balance = balance + $1
-                    WHERE id = $2
-                    RETURNING *
-                """, balance_delta, customer_id)
+                    INSERT INTO transactions (shop_id, customer_id, amount, currency, type, description)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                """, shop_id, customer_id, amount, currency, tx_type, description)
+                
+                if currency == 'USD':
+                    row = await conn.fetchrow("""
+                        UPDATE customers 
+                        SET balance_usd = COALESCE(balance_usd, 0) + $1
+                        WHERE id = $2
+                        RETURNING *
+                    """, balance_delta, customer_id)
+                else:
+                    row = await conn.fetchrow("""
+                        UPDATE customers 
+                        SET balance = COALESCE(balance, 0) + $1
+                        WHERE id = $2
+                        RETURNING *
+                    """, balance_delta, customer_id)
                 return dict(row)
     else:
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
             await db.execute(
-                "INSERT INTO transactions (shop_id, customer_id, amount, type, description) VALUES (?, ?, ?, ?, ?)",
-                (shop_id, customer_id, amount, tx_type, description)
+                "INSERT INTO transactions (shop_id, customer_id, amount, currency, type, description) VALUES (?, ?, ?, ?, ?, ?)",
+                (shop_id, customer_id, amount, currency, tx_type, description)
             )
-            await db.execute("UPDATE customers SET balance = balance + ? WHERE id = ?", (balance_delta, customer_id))
+            if currency == 'USD':
+                await db.execute("UPDATE customers SET balance_usd = COALESCE(balance_usd, 0) + ? WHERE id = ?", (balance_delta, customer_id))
+            else:
+                await db.execute("UPDATE customers SET balance = COALESCE(balance, 0) + ? WHERE id = ?", (balance_delta, customer_id))
             await db.commit()
             async with db.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)) as cursor:
                 row = await cursor.fetchone()

@@ -1,8 +1,29 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 import config
 
-def format_money(amount: float) -> str:
+def format_money(amount: float, currency: str = 'UZS') -> str:
+    if not amount:
+        amount = 0.0
+    if currency == 'USD':
+        val_str = f"{amount:,.2f}".replace(",", " ")
+        if val_str.endswith(".00"):
+            val_str = val_str[:-3]
+        return f"{val_str} $"
     return f"{amount:,.0f}".replace(",", " ") + " so'm"
+
+def get_currency_select_kb(action: str, customer_id: int) -> InlineKeyboardMarkup:
+    """action: 'debt' or 'pay'"""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🇺🇿 SO'M (UZS)", callback_data=f"curr_{action}_{customer_id}_UZS"),
+                InlineKeyboardButton(text="🇺🇸 DOLLAR ($)", callback_data=f"curr_{action}_{customer_id}_USD")
+            ],
+            [
+                InlineKeyboardButton(text="🔙 Bekor qilish", callback_data=f"view_cust_{customer_id}")
+            ]
+        ]
+    )
 
 def get_admin_main_kb(is_superadmin: bool = False, days_left: int = 30) -> ReplyKeyboardMarkup:
     buttons = [
@@ -168,7 +189,16 @@ def get_customers_list_kb(customers: list, page: int = 0, per_page: int = 8) -> 
     page_items = customers[start_idx:end_idx]
     
     for c in page_items:
-        balance_str = format_money(c['balance'])
+        bal_uzs = c.get('balance', 0.0) or 0.0
+        bal_usd = c.get('balance_usd', 0.0) or 0.0
+        
+        if bal_uzs > 0 and bal_usd > 0:
+            balance_str = f"{format_money(bal_uzs, 'UZS')} | {format_money(bal_usd, 'USD')}"
+        elif bal_usd > 0:
+            balance_str = format_money(bal_usd, 'USD')
+        else:
+            balance_str = format_money(bal_uzs, 'UZS')
+            
         due_icon = " ⏰" if c.get('due_date') else ""
         btn_text = f"👤 {c['full_name']} — {balance_str}{due_icon}"
         inline_keyboard.append([InlineKeyboardButton(text=btn_text, callback_data=f"view_cust_{c['id']}")])

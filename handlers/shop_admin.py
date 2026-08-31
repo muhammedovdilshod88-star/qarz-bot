@@ -431,12 +431,22 @@ async def view_customer_detail(call: CallbackQuery, bot: Bot):
         safe_name = html.escape(str(customer.get('full_name', 'Mijoz')))
         safe_phone = html.escape(phone_text)
         
+        bal_uzs = customer.get('balance', 0.0) or 0.0
+        bal_usd = customer.get('balance_usd', 0.0) or 0.0
+        
+        if bal_uzs > 0 and bal_usd > 0:
+            balance_display = f"💰 <b>So'm qarzi:</b> <b>{format_money(bal_uzs, 'UZS')}</b>\n💵 <b>Dollar qarzi:</b> <b>{format_money(bal_usd, 'USD')}</b>"
+        elif bal_usd > 0:
+            balance_display = f"💵 <b>Joriy qarz/nasiya balansi:</b> <b>{format_money(bal_usd, 'USD')}</b>"
+        else:
+            balance_display = f"💰 <b>Joriy qarz/nasiya balansi:</b> <b>{format_money(bal_uzs, 'UZS')}</b>"
+            
         text = (
             f"👤 <b>Mijoz:</b> {safe_name}\n"
             f"📞 <b>Telefon:</b> <code>{safe_phone}</code>\n"
             f"📱 <b>Holat:</b> {status_tg}\n"
             f"{due_display}"
-            f"💰 <b>Joriy qarz/nasiya balansi:</b> <b>{format_money(customer.get('balance', 0))}</b>\n\n"
+            f"{balance_display}\n\n"
             f"Quyidagi amallardan birini tanlang:"
         )
         kb = get_customer_actions_kb(
@@ -710,6 +720,8 @@ async def process_customer_phone(message: Message, state: FSMContext, bot: Bot):
 
 # ==================== QARZ YOZISH (SUMMA + IZOH) ====================
 
+from keyboards.admin_kb import get_currency_select_kb
+
 @router.callback_query(F.data.startswith("debt_"))
 async def start_add_debt(call: CallbackQuery, state: FSMContext):
     customer_id = int(call.data.split("_")[1])
@@ -718,11 +730,34 @@ async def start_add_debt(call: CallbackQuery, state: FSMContext):
         await call.answer("Mijoz topilmadi!", show_alert=True)
         return
     
+    await state.clear()
+    await call.message.edit_text(
+        f"➕ <b>{customer['full_name']}</b> ga qarz yozish uchun <b>valyutani tanlang</b>:",
+        reply_markup=get_currency_select_kb("debt", customer_id),
+        parse_mode="HTML"
+    )
+    await call.answer()
+
+@router.callback_query(F.data.startswith("curr_debt_"))
+async def process_debt_currency_choice(call: CallbackQuery, state: FSMContext):
+    parts = call.data.split("_")
+    customer_id = int(parts[2])
+    currency = parts[3] # 'UZS' or 'USD'
+    
+    customer = await db.get_customer(customer_id)
+    if not customer:
+        await call.answer("Mijoz topilmadi!", show_alert=True)
+        return
+        
+    curr_label = "🇺🇸 AQSH Dollari ($)" if currency == 'USD' else "🇺🇿 O'zbek So'mi"
+    example_val = "150 yoki 20.5" if currency == 'USD' else "50000 yoki 1500000"
+    
     await state.set_state(AdminStates.add_debt_amount)
-    await state.update_data(customer_id=customer_id, customer_name=customer['full_name'])
+    await state.update_data(customer_id=customer_id, customer_name=customer['full_name'], currency=currency)
     
     await call.message.answer(
-        f"➕ <b>{customer['full_name']}</b> ga qarz / nasiya summasini kiriting (faqat raqam, masalan: 50000 yoki 1500000):",
+        f"➕ <b>{customer['full_name']}</b> ga qarz summasini kiriting ({curr_label}):\n"
+        f"<i>(Masalan: {example_val})</i>",
         parse_mode="HTML",
         reply_markup=get_cancel_kb()
     )
@@ -730,19 +765,22 @@ async def start_add_debt(call: CallbackQuery, state: FSMContext):
 
 @router.message(AdminStates.add_debt_amount)
 async def process_debt_amount(message: Message, state: FSMContext):
-    text = message.text.replace(" ", "").replace(",", "")
+    text = message.text.replace(" ", "").replace(",", ".").replace("$", "")
     try:
         amount = float(text)
         if amount <= 0:
             raise ValueError()
     except ValueError:
-        await message.answer("⚠️ Iltimos, to'g'ri musbat summa kiriting (masalan: 100000):")
+        await message.answer("⚠️ Iltimos, to'g'ri musbat summa kiriting (masalan: 100 yoki 100000):")
         return
+    
+    data = await state.get_data()
+    currency = data.get('currency', 'UZS')
     
     await state.update_data(debt_amount=amount)
     await state.set_state(AdminStates.add_debt_desc)
     await message.answer(
-        f"Summa: <b>{format_money(amount)}</b>\n\n"
+        f"Summa: <b>{format_money(amount, currency)}</b>\n\n"
         f"📝 <b>Qarz sababi, tovar yoki xizmat izohini yozing:</b>\n"
         f"<i>(Masalan: Ko'ylak, Zapchast, Sement, Mator tuzatish, Ijara, Do'stona qarz va h.k.)</i>\n\n"
         f"Yoki o'tkazib yuborish uchun <code>-</code> yozing:",
@@ -755,6 +793,7 @@ async def process_debt_description(message: Message, state: FSMContext, bot: Bot
     desc = desc_raw if desc_raw != "-" else None
     
     data = await state.get_data()
+    currency = data.get('currency', 'UZS')
     shop = await db.get_shop_by_admin(message.from_user.id)
     
     updated_customer = await db.add_transaction(
@@ -762,7 +801,8 @@ async def process_debt_description(message: Message, state: FSMContext, bot: Bot
         customer_id=data['customer_id'],
         amount=data['debt_amount'],
         tx_type='debt',
-        description=desc
+        description=desc,
+        currency=currency
     )
     
     await state.clear()
@@ -775,12 +815,21 @@ async def process_debt_description(message: Message, state: FSMContext, bot: Bot
     
     safe_name = html.escape(str(updated_customer['full_name']))
     
+    bal_uzs = updated_customer.get('balance', 0.0) or 0.0
+    bal_usd = updated_customer.get('balance_usd', 0.0) or 0.0
+    if bal_uzs > 0 and bal_usd > 0:
+        balance_summary = f"{format_money(bal_uzs, 'UZS')} | {format_money(bal_usd, 'USD')}"
+    elif bal_usd > 0:
+        balance_summary = format_money(bal_usd, 'USD')
+    else:
+        balance_summary = format_money(bal_uzs, 'UZS')
+    
     msg_text = (
         f"✅ <b>Qarz / Nasiya muvaffaqiyatli yozildi!</b>\n\n"
         f"👤 Qarzdor/Mijoz: <b>{safe_name}</b>\n"
-        f"➕ Qo'shilgan summa: <b>{format_money(data['debt_amount'])}</b>\n"
+        f"➕ Qo'shilgan summa: <b>{format_money(data['debt_amount'], currency)}</b>\n"
         f"📝 Izoh / Sabab: <i>{html.escape(desc) if desc else 'Kiritilmadi'}</i>\n"
-        f"💰 Jami qarz balansi: <b>{format_money(updated_customer['balance'])}</b>"
+        f"💰 Jami qarz balansi: <b>{balance_summary}</b>"
     )
     
     # Agar mijoz hali botga ulanmagan bo'lsa, Telegram orqali yuborish tugmasini chiqaramiz
@@ -789,9 +838,9 @@ async def process_debt_description(message: Message, state: FSMContext, bot: Bot
         cust_link = f"https://t.me/{bot_info.username}?start=c_{updated_customer['id']}"
         share_text = (
             f"Assalomu alaykum, {updated_customer['full_name']}!\n\n"
-            f"«{shop['name']}» da sizning hisobingizga yangi qarz/nasiya yozildi: +{format_money(data['debt_amount'])}\n"
+            f"«{shop['name']}» da sizning hisobingizga yangi qarz/nasiya yozildi: +{format_money(data['debt_amount'], currency)}\n"
             f"📝 Izoh: {desc or 'Xarid'}\n"
-            f"💰 Jami qarzingiz: {format_money(updated_customer['balance'])}\n\n"
+            f"💰 Jami qarzingiz: {balance_summary}\n\n"
             f"Hisob-kitobni bot orqali kuzatib borish uchun ushbu havolani bosing:\n{cust_link}"
         )
         share_url = f"https://t.me/share/url?url={quote(cust_link)}&text={quote(share_text)}"
@@ -806,9 +855,9 @@ async def process_debt_description(message: Message, state: FSMContext, bot: Bot
         try:
             client_notify = (
                 f"📌 <b>«{shop['name']}»</b> hisobingizdan xabar:\n\n"
-                f"Sizning hisobingizga yangi qarz / nasiya yozildi: <b>+{format_money(data['debt_amount'])}</b>\n"
+                f"Sizning hisobingizga yangi qarz / nasiya yozildi: <b>+{format_money(data['debt_amount'], currency)}</b>\n"
                 f"📝 Izoh / Sabab: <i>{html.escape(desc) if desc else 'Kiritilmadi'}</i>\n"
-                f"💰 Sizning jami balansingiz: <b>{format_money(updated_customer['balance'])}</b>\n\n"
+                f"💰 Sizning jami balansingiz: <b>{balance_summary}</b>\n\n"
                 f"💬 <a href='tg://user?id={shop['admin_id']}'>Bog'lanish</a>"
             )
             await bot.send_message(chat_id=updated_customer['telegram_id'], text=client_notify, parse_mode="HTML")
@@ -829,12 +878,36 @@ async def start_add_payment(call: CallbackQuery, state: FSMContext):
         await call.answer("Mijoz topilmadi!", show_alert=True)
         return
     
+    await state.clear()
+    await call.message.edit_text(
+        f"➖ <b>{customer['full_name']}</b> dan to'lov qabul qilish uchun <b>valyutani tanlang</b>:",
+        reply_markup=get_currency_select_kb("pay", customer_id),
+        parse_mode="HTML"
+    )
+    await call.answer()
+
+@router.callback_query(F.data.startswith("curr_pay_"))
+async def process_pay_currency_choice(call: CallbackQuery, state: FSMContext):
+    parts = call.data.split("_")
+    customer_id = int(parts[2])
+    currency = parts[3] # 'UZS' or 'USD'
+    
+    customer = await db.get_customer(customer_id)
+    if not customer:
+        await call.answer("Mijoz topilmadi!", show_alert=True)
+        return
+        
+    curr_label = "🇺🇸 AQSH Dollari ($)" if currency == 'USD' else "🇺🇿 O'zbek So'mi"
+    curr_balance = customer.get('balance_usd', 0.0) if currency == 'USD' else customer.get('balance', 0.0)
+    example_val = "100 yoki 50.5" if currency == 'USD' else "50000 yoki 1500000"
+    
     await state.set_state(AdminStates.add_payment_amount)
-    await state.update_data(customer_id=customer_id)
+    await state.update_data(customer_id=customer_id, currency=currency)
     
     await call.message.answer(
-        f"➖ <b>{customer['full_name']}</b> qancha to'lov qildi? (Summani kiriting, masalan: 50000):\n"
-        f"Hozirgi umumiy qarzi: <b>{format_money(customer['balance'])}</b>",
+        f"➖ <b>{customer['full_name']}</b> qancha to'lov qildi? ({curr_label}):\n"
+        f"<i>(Masalan: {example_val})</i>\n"
+        f"Hozirgi umumiy qarzi: <b>{format_money(curr_balance, currency)}</b>",
         parse_mode="HTML",
         reply_markup=get_cancel_kb()
     )
@@ -842,16 +915,17 @@ async def start_add_payment(call: CallbackQuery, state: FSMContext):
 
 @router.message(AdminStates.add_payment_amount)
 async def process_payment_amount(message: Message, state: FSMContext, bot: Bot):
-    text = message.text.replace(" ", "").replace(",", "")
+    text = message.text.replace(" ", "").replace(",", ".").replace("$", "")
     try:
         amount = float(text)
         if amount <= 0:
             raise ValueError()
     except ValueError:
-        await message.answer("⚠️ Iltimos, to'g'ri musbat to'lov summasini kiriting:")
+        await message.answer("⚠️ Iltimos, to'g'ri musbat to'lov summasini kiriting (masalan: 50 yoki 50000):")
         return
     
     data = await state.get_data()
+    currency = data.get('currency', 'UZS')
     shop = await db.get_shop_by_admin(message.from_user.id)
     
     updated_customer = await db.add_transaction(
@@ -859,7 +933,8 @@ async def process_payment_amount(message: Message, state: FSMContext, bot: Bot):
         customer_id=data['customer_id'],
         amount=amount,
         tx_type='payment',
-        description="Qarz to'lovi"
+        description="Qarz to'lovi",
+        currency=currency
     )
     
     await state.clear()
@@ -872,11 +947,20 @@ async def process_payment_amount(message: Message, state: FSMContext, bot: Bot):
     
     safe_name = html.escape(str(updated_customer['full_name']))
     
+    bal_uzs = updated_customer.get('balance', 0.0) or 0.0
+    bal_usd = updated_customer.get('balance_usd', 0.0) or 0.0
+    if bal_uzs > 0 and bal_usd > 0:
+        balance_summary = f"{format_money(bal_uzs, 'UZS')} | {format_money(bal_usd, 'USD')}"
+    elif bal_usd > 0:
+        balance_summary = format_money(bal_usd, 'USD')
+    else:
+        balance_summary = format_money(bal_uzs, 'UZS')
+    
     msg_text = (
         f"✅ <b>To'lov qabul qilindi!</b>\n\n"
         f"👤 Mijoz: <b>{safe_name}</b>\n"
-        f"➖ Qabul qilingan to'lov: <b>{format_money(amount)}</b>\n"
-        f"💰 Qolgan qarz balansi: <b>{format_money(updated_customer['balance'])}</b>"
+        f"➖ Qabul qilingan to'lov: <b>{format_money(amount, currency)}</b>\n"
+        f"💰 Qolgan qarz balansi: <b>{balance_summary}</b>"
     )
     
     # Agar mijoz hali ulanmagan bo'lsa, Telegramdan to'lov chekini jo'natish tugmasi
@@ -885,8 +969,8 @@ async def process_payment_amount(message: Message, state: FSMContext, bot: Bot):
         cust_link = f"https://t.me/{bot_info.username}?start=c_{updated_customer['id']}"
         share_text = (
             f"Assalomu alaykum, {updated_customer['full_name']}!\n\n"
-            f"«{shop['name']}» da sizning {format_money(amount)} to'lovingiz qabul qilindi.\n"
-            f"💰 Qolgan qarz balansingiz: {format_money(updated_customer['balance'])}\n"
+            f"«{shop['name']}» da sizning {format_money(amount, currency)} to'lovingiz qabul qilindi.\n"
+            f"💰 Qolgan qarz balansingiz: {balance_summary}\n"
             f"Rahmat!\n\n"
             f"Hisobingizni botda kuzatib borish uchun:\n{cust_link}"
         )
@@ -901,8 +985,8 @@ async def process_payment_amount(message: Message, state: FSMContext, bot: Bot):
         try:
             client_notify = (
                 f"✅ <b>«{shop['name']}»</b> hisobingizdan xabar:\n\n"
-                f"Sizning <b>{format_money(amount)}</b> to'lovingiz qabul qilindi.\n"
-                f"💰 Qolgan qarz balansingiz: <b>{format_money(updated_customer['balance'])}</b>\n"
+                f"Sizning <b>{format_money(amount, currency)}</b> to'lovingiz qabul qilindi.\n"
+                f"💰 Qolgan qarz balansingiz: <b>{balance_summary}</b>\n"
                 f"Rahmat!\n\n"
                 f"💬 <a href='tg://user?id={shop['admin_id']}'>Qarz beruvchi bilan bog'lanish</a>"
             )

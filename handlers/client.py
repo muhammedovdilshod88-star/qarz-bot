@@ -535,10 +535,23 @@ async def show_my_debts(message: Message, bot: Bot):
         f"🛒 <i>(Boshqalardan olgan qarz va nasiyalaringiz)</i>\n"
         f"────────────────────\n\n"
     )
-    total_all = 0.0
+    total_uzs = 0.0
+    total_usd = 0.0
     for acc in accounts:
+        bal_u = acc.get('balance', 0.0) or 0.0
+        bal_d = acc.get('balance_usd', 0.0) or 0.0
+        total_uzs += bal_u
+        total_usd += bal_d
+        
+        if bal_u > 0 and bal_d > 0:
+            b_str = f"{format_money(bal_u, 'UZS')} | {format_money(bal_d, 'USD')}"
+        elif bal_d > 0:
+            b_str = format_money(bal_d, 'USD')
+        else:
+            b_str = format_money(bal_u, 'UZS')
+            
         text += f"📒 <b>Qarz / Nasiya beruvchi:</b> {acc['shop_name']}\n"
-        text += f"💰 <b>Qarzingiz / Nasiya:</b> {format_money(acc['balance'])}\n"
+        text += f"💰 <b>Qarzingiz / Nasiya:</b> <b>{b_str}</b>\n"
         if acc['shop_phone']:
             text += f"📞 <b>Telefon:</b> <code>{acc['shop_phone']}</code>\n"
         
@@ -547,9 +560,15 @@ async def show_my_debts(message: Message, bot: Bot):
             text += f"💬 <b>Telegram aloqa:</b> <a href='tg://user?id={shop['admin_id']}'>Qarz beruvchiga yozish</a>\n"
             
         text += "────────────────────\n"
-        total_all += acc['balance']
         
-    text += f"\n📊 <b>Jami umumiy qarzingiz: {format_money(total_all)}</b>"
+    if total_uzs > 0 and total_usd > 0:
+        total_summary = f"{format_money(total_uzs, 'UZS')} | {format_money(total_usd, 'USD')}"
+    elif total_usd > 0:
+        total_summary = format_money(total_usd, 'USD')
+    else:
+        total_summary = format_money(total_uzs, 'UZS')
+        
+    text += f"\n📊 <b>Jami umumiy qarzingiz: {total_summary}</b>"
     await message.answer(text, parse_mode="HTML", reply_markup=get_client_main_kb(has_own_shop=has_own_shop))
 
 @router.message(F.text.in_(["📒 Mening daftarim (Qarz beruvchi rejimi)", "📒 Mening daftarim (Boshqaruv)", "🏪 Mening do'konim (Do'konchi rejimi)"]))
