@@ -546,9 +546,18 @@ async def show_sms_template(call: CallbackQuery):
     shop_name = shop['name'] if shop else "Qarz beruvchi"
     phone = customer['phone'] or ""
     
+    bal_u = customer.get('balance', 0.0) or 0.0
+    bal_d = customer.get('balance_usd', 0.0) or 0.0
+    if bal_u > 0 and bal_d > 0:
+        cust_bal_text = f"{format_money(bal_u, 'UZS')} va {format_money(bal_d, 'USD')}"
+    elif bal_d > 0:
+        cust_bal_text = format_money(bal_d, 'USD')
+    else:
+        cust_bal_text = format_money(bal_u, 'UZS')
+        
     sms_text = (
         f"Assalomu alaykum, {customer['full_name']}! "
-        f"'{shop_name}' dagi qarz/nasiya hisobingiz: {format_money(customer['balance'])}. "
+        f"'{shop_name}' dagi qarz/nasiya hisobingiz: {cust_bal_text}. "
         f"Imkoningiz bo'lganda to'lovni amalga oshirishingizni so'raymiz. Rahmat!"
     )
     
@@ -591,9 +600,19 @@ async def show_customer_history(call: CallbackQuery, bot: Bot):
             icon = "🔴 Qarz:" if t['type'] == 'debt' else "🟢 To'lov:"
             desc = f" ({t['description']})" if t['description'] else ""
             date_str = str(t['created_at'])[:16]
-            text += f"{icon} {format_money(t['amount'])}{desc}\n📅 <i>{date_str}</i>\n───────────────\n"
+            curr = t.get('currency', 'UZS') or 'UZS'
+            text += f"{icon} {format_money(t['amount'], curr)}{desc}\n📅 <i>{date_str}</i>\n───────────────\n"
             
-    text += f"\n💰 <b>Jami qoldiq qarz: {format_money(customer['balance'])}</b>"
+    bal_u = customer.get('balance', 0.0) or 0.0
+    bal_d = customer.get('balance_usd', 0.0) or 0.0
+    if bal_u > 0 and bal_d > 0:
+        total_bal_str = f"{format_money(bal_u, 'UZS')} | {format_money(bal_d, 'USD')}"
+    elif bal_d > 0:
+        total_bal_str = format_money(bal_d, 'USD')
+    else:
+        total_bal_str = format_money(bal_u, 'UZS')
+        
+    text += f"\n💰 <b>Jami qoldiq qarz: {total_bal_str}</b>"
     
     kb = get_customer_actions_kb(customer_id, bot_info.username, customer['shop_id'], customer['phone'])
     await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")

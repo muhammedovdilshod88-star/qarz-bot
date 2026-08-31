@@ -209,13 +209,22 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
                 shop = await db.get_shop_by_id(cust['shop_id'])
                 shop_name = shop['name'] if shop else "Qarz beruvchi"
                 
+                bal_u = cust.get('balance', 0.0) or 0.0
+                bal_d = cust.get('balance_usd', 0.0) or 0.0
+                if bal_u > 0 and bal_d > 0:
+                    cust_bal_str = f"{format_money(bal_u, 'UZS')} | {format_money(bal_d, 'USD')}"
+                elif bal_d > 0:
+                    cust_bal_str = format_money(bal_d, 'USD')
+                else:
+                    cust_bal_str = format_money(bal_u, 'UZS')
+                
                 if shop:
                     try:
                         admin_notify = (
                             f"🔔 <b>Qarzdor hisobi ulandi!</b>\n\n"
                             f"👤 Ism: <b>{cust['full_name']}</b>\n"
                             f"🆔 Telegram ID: <code>{user_id}</code>\n"
-                            f"💰 Mavjud qarzi: <b>{format_money(cust['balance'])}</b>\n"
+                            f"💰 Mavjud qarzi: <b>{cust_bal_str}</b>\n"
                             f"Qarzdor shaxsiy havolasi orqali botga muvaffaqiyatli bog'landi."
                         )
                         await bot.send_message(chat_id=shop['admin_id'], text=admin_notify, parse_mode="HTML")
@@ -225,7 +234,7 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
                 welcome_text = (
                     f"Assalomu alaykum, <b>{cust['full_name']}</b>!\n\n"
                     f"📒 Siz <b>«{shop_name}»</b> qarz va nasiya hisobiga muvaffaqiyatli ulandingiz.\n"
-                    f"💰 Sizning joriy qarz balansingiz: <b>{format_money(cust['balance'])}</b>\n\n"
+                    f"💰 Sizning joriy qarz balansingiz: <b>{cust_bal_str}</b>\n\n"
                     f"Endi har gal xarid yoki to'lov amalga oshirilganda hisobotlar avtomatik yuboriladi."
                 )
                 await message.answer(welcome_text, parse_mode="HTML", reply_markup=get_client_main_kb())
@@ -662,7 +671,8 @@ async def show_my_history(message: Message):
                 icon = "🔴 Qarz:" if t['type'] == 'debt' else "🟢 To'lov:"
                 desc = f" ({t['description']})" if t['description'] else ""
                 date_str = str(t['created_at'])[:16]
-                text += f"{icon} {format_money(t['amount'])}{desc}\n📅 <i>{date_str}</i>\n"
+                curr = t.get('currency', 'UZS') or 'UZS'
+                text += f"{icon} {format_money(t['amount'], curr)}{desc}\n📅 <i>{date_str}</i>\n"
         text += "────────────────────\n"
         
     await message.answer(text, parse_mode="HTML", reply_markup=get_client_main_kb(has_own_shop=has_own_shop))
