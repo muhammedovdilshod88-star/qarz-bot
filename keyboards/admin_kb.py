@@ -185,8 +185,17 @@ def get_due_date_select_kb(customer_id: int) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="⏳ 15 kun", callback_data=f"setdue_{customer_id}_15"),
                 InlineKeyboardButton(text="⏳ 30 kun (1 oy)", callback_data=f"setdue_{customer_id}_30"),
             ],
-            [InlineKeyboardButton(text="❌ Muddatni olib tashlash", callback_data=f"setdue_{customer_id}_0")],
-            [InlineKeyboardButton(text="🔙 Orqaga", callback_data=f"view_cust_{customer_id}")]
+            [
+                InlineKeyboardButton(text="⏳ 2 oy (60 kun)", callback_data=f"setdue_{customer_id}_60"),
+                InlineKeyboardButton(text="⏳ 3 oy (90 kun)", callback_data=f"setdue_{customer_id}_90"),
+            ],
+            [
+                InlineKeyboardButton(text="📅 Aniq sanani kiritish (Kun.Oy.Yil)", callback_data=f"customdue_{customer_id}")
+            ],
+            [
+                InlineKeyboardButton(text="❌ Muddatni olib tashlash", callback_data=f"setdue_{customer_id}_0"),
+                InlineKeyboardButton(text="🔙 Orqaga", callback_data=f"view_cust_{customer_id}")
+            ]
         ]
     )
 

@@ -24,6 +24,7 @@ class AdminStates(StatesGroup):
     add_payment_amount = State()
     add_staff_name = State()
     add_staff_tg_id = State()
+    enter_custom_due_date = State()
 
 USER_LEDGER_MODES: dict = {}
 
@@ -645,6 +646,99 @@ async def start_set_due_date(call: CallbackQuery):
         )
     await call.message.edit_text(text, reply_markup=get_due_date_select_kb(customer_id), parse_mode="HTML")
     await call.answer()
+
+@router.callback_query(F.data.startswith("customdue_"))
+async def start_custom_due_date(call: CallbackQuery, state: FSMContext):
+    customer_id = int(call.data.split("_")[1])
+    customer = await db.get_customer(customer_id)
+    if not customer:
+        await call.answer("Mijoz topilmadi!", show_alert=True)
+        return
+        
+    user_id = call.from_user.id
+    mode = get_user_ledger_mode(user_id)
+    ledger_type = customer.get('ledger_type') or mode
+    
+    await state.set_state(AdminStates.enter_custom_due_date)
+    await state.update_data(due_customer_id=customer_id, due_ledger_type=ledger_type)
+    
+    prompt_role = "qarzni qaytarish" if ledger_type == 'payable' else "to'lov"
+    text = (
+        f"📅 <b>{customer['full_name']}</b> uchun aniq {prompt_role} sanasini kiriting:\n\n"
+        f"<i>(Format: <b>Kun.Oy.Yil</b> yoki <b>Kun.Oy</b>)</i>\n\n"
+        f"📝 <b>Misollar:</b>\n"
+        f"• <code>25.09.2026</code> (yoki <code>25.09</code>)\n"
+        f"• <code>10.10.2026</code> (yoki <code>10.10</code>)\n"
+        f"• <code>01.01.2027</code>\n\n"
+        f"👇 <i>Sanani quyida yozib yuboring:</i>"
+    )
+    await call.message.answer(text, parse_mode="HTML", reply_markup=get_cancel_kb())
+    await call.answer()
+
+@router.message(AdminStates.enter_custom_due_date)
+async def process_custom_due_date(message: Message, state: FSMContext, bot: Bot):
+    raw_date = message.text.strip().replace("/", ".").replace("-", ".").replace(" ", "")
+    parts = [p for p in raw_date.split(".") if p.isdigit()]
+    
+    from datetime import datetime, date
+    now = datetime.now()
+    parsed_date = None
+    
+    try:
+        if len(parts) == 2:
+            day, month = int(parts[0]), int(parts[1])
+            year = now.year
+            # Agar sana joriy yilda o'tib ketgan bo'lsa, kelgusi yil deb olamiz
+            candidate = date(year, month, day)
+            if candidate < now.date():
+                candidate = date(year + 1, month, day)
+            parsed_date = candidate
+        elif len(parts) == 3:
+            # Kun.Oy.Yil yoki Yil.Oy.Kun
+            if len(parts[0]) == 4: # 2026.09.25
+                year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
+            else: # 25.09.2026
+                day, month, year = int(parts[0]), int(parts[1]), int(parts[2])
+                if year < 100:
+                    year += 2000
+            parsed_date = date(year, month, day)
+        else:
+            raise ValueError()
+            
+        if parsed_date < now.date():
+            await message.answer(
+                "⚠️ <b>Belgilanayotgan sana bugungi kundan keyin (kelajakda) bo'lishi kerak!</b>\n\n"
+                "Iltimos, to'g'ri sanani qaytadan kiriting (Masalan: <code>25.09.2026</code>):",
+                parse_mode="HTML"
+            )
+            return
+    except Exception:
+        await message.answer(
+            "⚠️ <b>Sana noto'g'ri formatda kiritildi!</b>\n\n"
+            "Iltimos, sanani <b>Kun.Oy.Yil</b> formatida yozing (Masalan: <code>25.09.2026</code> yoki <code>15.10</code>):",
+            parse_mode="HTML"
+        )
+        return
+        
+    data = await state.get_data()
+    customer_id = data.get('due_customer_id')
+    ledger_type = data.get('due_ledger_type', 'receivable')
+    await state.clear()
+    
+    date_iso = parsed_date.strftime("%Y-%m-%d")
+    date_formatted = parsed_date.strftime("%d.%m.%Y")
+    await db.set_customer_due_specific_date(customer_id, date_iso)
+    
+    customer = await db.get_customer(customer_id)
+    safe_name = customer['full_name'] if customer else "Mijoz"
+    
+    if ledger_type == 'payable':
+        msg = f"✅ <b>«{safe_name}»</b> ga qarzni qaytarish muddati <b>{date_formatted}</b> sanasiga belgilandi.\n💡 <i>Shu kuni bot sizning o'zingizga eslatma yuboradi!</i>"
+    else:
+        msg = f"✅ <b>«{safe_name}»</b> uchun to'lov muddati <b>{date_formatted}</b> sanasiga belgilandi!"
+        
+    await message.answer(msg, parse_mode="HTML")
+    await render_customer_card(message, customer_id, bot, user_id=message.from_user.id)
 
 @router.callback_query(F.data.startswith("setdue_"))
 async def process_set_due_date(call: CallbackQuery, bot: Bot):

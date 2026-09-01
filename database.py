@@ -645,7 +645,7 @@ async def link_customer_telegram(customer_id: int, telegram_id: int, full_name: 
                 return dict(row) if row else None
 
 async def set_customer_due_date(customer_id: int, days: int):
-    """Mijoz uchun to'lov muddatini belgilash"""
+    """Mijoz uchun to'lov muddatini belgilash (kunlar hisobida)"""
     if USE_POSTGRES:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
@@ -659,6 +659,23 @@ async def set_customer_due_date(customer_id: int, days: int):
                 await db.execute("UPDATE customers SET due_date = NULL WHERE id = ?", (customer_id,))
             else:
                 await db.execute("UPDATE customers SET due_date = datetime('now', ?) WHERE id = ?", (f"+{days} days", customer_id))
+            await db.commit()
+
+async def set_customer_due_specific_date(customer_id: int, date_iso_str: str):
+    """Mijoz uchun aniq sana (YYYY-MM-DD) bo'yicha muddat belgilash"""
+    if USE_POSTGRES:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            if not date_iso_str:
+                await conn.execute("UPDATE customers SET due_date = NULL WHERE id = $1", customer_id)
+            else:
+                await conn.execute("UPDATE customers SET due_date = $1::TIMESTAMP WHERE id = $2", f"{date_iso_str} 10:00:00", customer_id)
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            if not date_iso_str:
+                await db.execute("UPDATE customers SET due_date = NULL WHERE id = ?", (customer_id,))
+            else:
+                await db.execute("UPDATE customers SET due_date = ? WHERE id = ?", (f"{date_iso_str} 10:00:00", customer_id))
             await db.commit()
 
 async def get_due_reminders():
