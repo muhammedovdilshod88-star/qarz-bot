@@ -520,60 +520,62 @@ async def back_to_customers_list(call: CallbackQuery):
 
 from keyboards.admin_kb import get_due_date_select_kb
 
+async def render_customer_card(message: Message, customer_id: int, bot: Bot):
+    customer = await db.get_customer(customer_id)
+    if not customer:
+        return
+    
+    import html
+    bot_info = await bot.get_me()
+    status_tg = "✅ Telegram ulangan" if customer.get('telegram_id') else "❌ Telegram hali ulanmagan"
+    phone_text = str(customer['phone']) if customer.get('phone') else "Kiritilmagan"
+    due_str = str(customer['due_date'])[:10] if customer.get('due_date') else None
+    
+    ledger_type = customer.get('ledger_type', 'receivable')
+    person_label = "Haqdor (Qarz beruvchi)" if ledger_type == 'payable' else "Mijoz / Qarzdor"
+    due_label = "Qaytarish muddati" if ledger_type == 'payable' else "To'lov muddati"
+    due_display = f"📅 <b>{due_label}:</b> <code>{due_str}</code> gacha\n" if due_str else ""
+    
+    safe_name = html.escape(str(customer.get('full_name', 'Mijoz')))
+    safe_phone = html.escape(phone_text)
+    
+    bal_uzs = customer.get('balance', 0.0) or 0.0
+    bal_usd = customer.get('balance_usd', 0.0) or 0.0
+    
+    if bal_uzs > 0 and bal_usd > 0:
+        balance_display = f"💰 <b>So'm qarzi:</b> <b>{format_money(bal_uzs, 'UZS')}</b>\n💵 <b>Dollar qarzi:</b> <b>{format_money(bal_usd, 'USD')}</b>"
+    elif bal_usd > 0:
+        balance_display = f"💵 <b>Joriy qarz balansi:</b> <b>{format_money(bal_usd, 'USD')}</b>"
+    else:
+        balance_display = f"💰 <b>Joriy qarz balansi:</b> <b>{format_money(bal_uzs, 'UZS')}</b>"
+        
+    text = (
+        f"👤 <b>{person_label}:</b> {safe_name}\n"
+        f"📞 <b>Telefon:</b> <code>{safe_phone}</code>\n"
+        f"📱 <b>Holat:</b> {status_tg}\n"
+        f"{due_display}"
+        f"{balance_display}\n\n"
+        f"Quyidagi amallardan birini tanlang:"
+    )
+    kb = get_customer_actions_kb(
+        customer_id=customer_id, 
+        bot_username=bot_info.username, 
+        shop_id=customer['shop_id'], 
+        phone=customer.get('phone'),
+        telegram_id=customer.get('telegram_id'),
+        due_date_str=due_str,
+        ledger_type=ledger_type
+    )
+    try:
+        await message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
+
 @router.callback_query(F.data.startswith("view_cust_"))
 async def view_customer_detail(call: CallbackQuery, bot: Bot):
     try:
         customer_id = int(call.data.split("_")[2])
-        customer = await db.get_customer(customer_id)
-        if not customer:
-            await call.answer("Mijoz topilmadi!", show_alert=True)
-            return
-        
-        import html
-        bot_info = await bot.get_me()
-        status_tg = "✅ Telegram ulangan" if customer.get('telegram_id') else "❌ Telegram hali ulanmagan"
-        phone_text = str(customer['phone']) if customer.get('phone') else "Kiritilmagan"
-        due_str = str(customer['due_date'])[:10] if customer.get('due_date') else None
-        
-        ledger_type = customer.get('ledger_type', 'receivable')
-        person_label = "Haqdor (Qarz beruvchi)" if ledger_type == 'payable' else "Mijoz / Qarzdor"
-        due_label = "Qaytarish muddati" if ledger_type == 'payable' else "To'lov muddati"
-        due_display = f"📅 <b>{due_label}:</b> <code>{due_str}</code> gacha\n" if due_str else ""
-        
-        safe_name = html.escape(str(customer.get('full_name', 'Mijoz')))
-        safe_phone = html.escape(phone_text)
-        
-        bal_uzs = customer.get('balance', 0.0) or 0.0
-        bal_usd = customer.get('balance_usd', 0.0) or 0.0
-        
-        if bal_uzs > 0 and bal_usd > 0:
-            balance_display = f"💰 <b>So'm qarzi:</b> <b>{format_money(bal_uzs, 'UZS')}</b>\n💵 <b>Dollar qarzi:</b> <b>{format_money(bal_usd, 'USD')}</b>"
-        elif bal_usd > 0:
-            balance_display = f"💵 <b>Joriy qarz balansi:</b> <b>{format_money(bal_usd, 'USD')}</b>"
-        else:
-            balance_display = f"💰 <b>Joriy qarz balansi:</b> <b>{format_money(bal_uzs, 'UZS')}</b>"
-            
-        text = (
-            f"👤 <b>{person_label}:</b> {safe_name}\n"
-            f"📞 <b>Telefon:</b> <code>{safe_phone}</code>\n"
-            f"📱 <b>Holat:</b> {status_tg}\n"
-            f"{due_display}"
-            f"{balance_display}\n\n"
-            f"Quyidagi amallardan birini tanlang:"
-        )
-        kb = get_customer_actions_kb(
-            customer_id=customer_id, 
-            bot_username=bot_info.username, 
-            shop_id=customer['shop_id'], 
-            phone=customer.get('phone'),
-            telegram_id=customer.get('telegram_id'),
-            due_date_str=due_str,
-            ledger_type=ledger_type
-        )
-        try:
-            await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
-        except Exception:
-            await call.message.answer(text, reply_markup=kb, parse_mode="HTML")
+        await render_customer_card(call.message, customer_id, bot)
         await call.answer()
     except Exception as e:
         logger.error(f"view_customer_detail xatosi: {e}")
@@ -655,10 +657,7 @@ async def process_set_due_date(call: CallbackQuery, bot: Bot):
         msg = "✅ To'lov muddati olib tashlandi." if days == 0 else f"✅ To'lov muddati {days} kunga belgilandi!"
         
     await call.answer(msg, show_alert=True)
-    
-    # Qayta mijoz oynasiga qaytish
-    call.data = f"view_cust_{customer_id}"
-    await view_customer_detail(call, bot)
+    await render_customer_card(call.message, customer_id, bot)
 
 # ==================== 3. SMS SHABLONI ====================
 
