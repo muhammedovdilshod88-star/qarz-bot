@@ -245,6 +245,27 @@ async def show_subscription_info(message: Message, state: FSMContext):
     )
     await message.answer(text, parse_mode="HTML", reply_markup=get_subscription_kb())
 
+from keyboards.admin_kb import get_security_info_kb
+
+@router.message(StateFilter('*'), F.text.func(lambda t: t and any(k in t.lower() for k in ["xavfsizlik", "tiklash"])))
+async def show_security_and_recovery_info(message: Message, state: FSMContext):
+    await state.clear()
+    shop = await db.get_shop_by_admin(message.from_user.id)
+    shop_name = shop['name'] if shop else "Qarz Daftari"
+    
+    text = (
+        f"🛡 <b>«{shop_name}» — Xavfsizlik va Ma'lumotlarni Tiklash Kafolati</b>\n\n"
+        f"1️⃣ <b>Doimiy Bulutli Himoya:</b>\n"
+        f"Barcha qarzdorlaringiz, qarz summalari va to'lovlar tarixi xavfsiz PostgreSQL bulutida 24/7 saqlanadi. Telefoningiz buzilsa yoki yo'qolsa ham <b>birorta qarz yo'qolmaydi!</b>\n\n"
+        f"2️⃣ <b>Har kunlik avtomatik Zaxira (Backup):</b>\n"
+        f"Har kuni kechasi butun tizim to'liq zaxiralanadi.\n\n"
+        f"3️⃣ <b>Agar Telegramingiz spam bo'lsa yoki telefoningiz o'zgarsa:</b>\n"
+        f"Yangi profilingizdan kirib, pastdagi <b>«🔄 Daftarni yangi profilga tiklash»</b> tugmasi orqali telefon raqamingizni tasdiqlab, daftaringizni 1 soniyada to'liq tiklab olasiz!\n\n"
+        f"4️⃣ <b>Qiyin vaziyatlarda:</b>\n"
+        f"Bizning Super Adminimiz (@{config.ADMIN_USERNAME}) har qanday holatda hisobingizni zudlik bilan tiklab beradi."
+    )
+    await message.answer(text, parse_mode="HTML", reply_markup=get_security_info_kb())
+
 @router.message(StateFilter('*'), F.text.func(lambda t: t and "znachok" in t.lower()))
 async def show_add_to_homescreen_guide(message: Message):
     text = (

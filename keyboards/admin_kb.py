@@ -39,7 +39,8 @@ def get_admin_main_kb(is_superadmin: bool = False, days_left: int = 30, ledger_t
             [list_btn, add_btn],
             [KeyboardButton(text="🔍 Qidirish"), KeyboardButton(text="📊 Statistika")],
             [KeyboardButton(text="📥 Excel hisoboti"), KeyboardButton(text="⚙️ Daftar nomi")],
-            [KeyboardButton(text=f"⏳ Obuna: {days_left} kun qoldi"), KeyboardButton(text="📲 Ekranga znachok")],
+            [KeyboardButton(text=f"⏳ Obuna: {days_left} kun qoldi"), KeyboardButton(text="🛡 Xavfsizlik va Tiklash")],
+            [KeyboardButton(text="📲 Ekranga znachok")],
         ]
     else:
         # 🟢 MENGA QARZLAR REJIMI (Menga qaytarishi kerak bo'lgan qarzlar - Do'kon/Daftar)
@@ -55,7 +56,8 @@ def get_admin_main_kb(is_superadmin: bool = False, days_left: int = 30, ledger_t
             [KeyboardButton(text="🔍 Qidirish"), KeyboardButton(text="📊 Statistika")],
             [KeyboardButton(text="📥 Excel hisoboti"), KeyboardButton(text="📲 Ulanish QR kodi")],
             [KeyboardButton(text="👥 Sheriklar (Adminlar)"), KeyboardButton(text="⚙️ Daftar nomi")],
-            [KeyboardButton(text=f"⏳ Obuna: {days_left} kun qoldi"), KeyboardButton(text="📲 Ekranga znachok")],
+            [KeyboardButton(text=f"⏳ Obuna: {days_left} kun qoldi"), KeyboardButton(text="🛡 Xavfsizlik va Tiklash")],
+            [KeyboardButton(text="📲 Ekranga znachok")],
         ]
         
     if is_superadmin:
@@ -76,6 +78,15 @@ def get_subscription_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="💬 To'lov chekini yuborish", url=f"https://t.me/{config.ADMIN_USERNAME}")],
+            [InlineKeyboardButton(text="🔙 Orqaga", callback_data="back_to_admin_main")]
+        ]
+    )
+
+def get_security_info_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Daftarni yangi profilga tiklash", callback_data="start_recover_my_store")],
+            [InlineKeyboardButton(text="👨‍💻 Super Admin (Tiklash yordami)", url=f"https://t.me/{config.ADMIN_USERNAME}")],
             [InlineKeyboardButton(text="🔙 Orqaga", callback_data="back_to_admin_main")]
         ]
     )
