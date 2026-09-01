@@ -616,21 +616,30 @@ async def send_customer_reminder(call: CallbackQuery, bot: Bot):
         await call.answer("Mijoz topilmadi!", show_alert=True)
         return
         
-    if customer['balance'] <= 0:
+    bal_u = customer.get('balance', 0.0) or 0.0
+    bal_d = customer.get('balance_usd', 0.0) or 0.0
+    if bal_u <= 0 and bal_d <= 0:
         await call.answer("Bu mijozda faol qarz yo'q!", show_alert=True)
         return
         
     shop = await db.get_shop_by_id(customer['shop_id'])
     shop_name = shop['name'] if shop else "Qarz beruvchi"
     
-    if not customer['telegram_id']:
+    if not customer.get('telegram_id'):
         await call.answer("⚠️ Qarzdor hali botga ulanmagan! Pastdagi '📲 SMS shabloni' orqali yuborishingiz mumkin.", show_alert=True)
         return
+        
+    if bal_u > 0 and bal_d > 0:
+        bal_str = f"<b>{format_money(bal_u, 'UZS')}</b> va <b>{format_money(bal_d, 'USD')}</b>"
+    elif bal_d > 0:
+        bal_str = f"<b>{format_money(bal_d, 'USD')}</b>"
+    else:
+        bal_str = f"<b>{format_money(bal_u, 'UZS')}</b>"
         
     # Madaniyatli va rasmiy eslatma matni
     reminder_msg = (
         f"🔔 <b>Hurmatli {customer['full_name']}!</b>\n\n"
-        f"<b>«{shop_name}»</b> dagi qarz va nasiya hisobingiz bo'yicha joriy qoldiq: <b>{format_money(customer['balance'])}</b>.\n\n"
+        f"<b>«{shop_name}»</b> dagi qarz va nasiya hisobingiz bo'yicha joriy qoldiq: {bal_str}.\n\n"
         f"💳 <i>Imkoningiz bo'lganda to'lovni amalga oshirishingizni so'raymiz. Rahmat!</i>\n\n"
         f"💬 <a href='tg://user?id={shop['admin_id']}'>Qarz beruvchi bilan bog'lanish</a>"
     )
