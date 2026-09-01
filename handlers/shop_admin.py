@@ -25,6 +25,14 @@ class AdminStates(StatesGroup):
     add_staff_name = State()
     add_staff_tg_id = State()
 
+USER_LEDGER_MODES: dict = {}
+
+def get_user_ledger_mode(user_id: int) -> str:
+    return USER_LEDGER_MODES.get(user_id, 'receivable')
+
+def set_user_ledger_mode(user_id: int, mode: str):
+    USER_LEDGER_MODES[user_id] = mode
+
 @router.message(StateFilter('*'), F.text.in_(["❌ Bekor qilish", "/cancel"]))
 async def cancel_action(message: Message, state: FSMContext):
     await state.clear()
@@ -32,9 +40,43 @@ async def cancel_action(message: Message, state: FSMContext):
     if shop:
         is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
         is_sa = message.from_user.id in config.SUPER_ADMIN_IDS
-        await message.answer("Amal bekor qilindi.", reply_markup=get_admin_main_kb(is_sa, days_left=days_left))
+        mode = get_user_ledger_mode(message.from_user.id)
+        await message.answer("Amal bekor qilindi.", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=mode))
     else:
         await message.answer("Amal bekor qilindi.")
+
+# ==================== IKKI TOMONLAMA REJIMNI ALMASHTIRISH (SWITCH LEDGER) ====================
+
+@router.message(StateFilter('*'), F.text.func(lambda t: t and ("berishim kerak" in t.lower() or "olishim kerak" in t.lower() or ("menga qarzlar" in t.lower() and "o'tish" in t.lower()) or ("mening qarzlarim" in t.lower() and "o'tish" in t.lower()))))
+async def switch_ledger_mode(message: Message, state: FSMContext):
+    await state.clear()
+    user_id = message.from_user.id
+    shop = await db.get_shop_by_admin(user_id)
+    if not shop:
+        return
+        
+    is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
+    is_sa = user_id in config.SUPER_ADMIN_IDS
+    current_mode = get_user_ledger_mode(user_id)
+    
+    if current_mode == 'receivable':
+        # Mening qarzlarimga o'tkazish
+        set_user_ledger_mode(user_id, 'payable')
+        text = (
+            f"🔴 <b>«MENING QARZLARIM (Men berishim kerak bo'lgan pullar)» rejimiga o'tdingiz!</b>\n\n"
+            f"Bu bo'limda siz o'zingiz boshqalardan olgan qarzlaringiz va haqdorlaringiz (qarz beruvchilar) ro'yxatini yuritishingiz mumkin.\n\n"
+            f"👇 Quyidagi menyudan kerakli amalni tanlang:"
+        )
+        await message.answer(text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type='payable'))
+    else:
+        # Menga qarzlar rejimiga qaytarish
+        set_user_ledger_mode(user_id, 'receivable')
+        text = (
+            f"🟢 <b>«MENGA QARZLAR (Menga qaytarishi kerak bo'lgan pullar)» rejimiga o'tdingiz!</b>\n\n"
+            f"Bu bo'limda siz boshqalarga bergan qarzlaringiz va qarzdorlar ro'yxatini boshqarasiz.\n\n"
+            f"👇 Quyidagi menyudan kerakli amalni tanlang:"
+        )
+        await message.answer(text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type='receivable'))
 
 # ==================== SHERIKLAR (ADMINLAR) BOSHQARUVI ====================
 
@@ -361,12 +403,13 @@ async def switch_stats_period(call: CallbackQuery):
         pass
     await call.answer()
 
-# ==================== MIJOZLARNI RO'YXATI VA FILTR ====================
+# ==================== MIJOZLAR / HAQDORLAR RO'YXATI VA FILTR ====================
 
-@router.message(StateFilter('*'), F.text.func(lambda t: t and any(k in t.lower() for k in ["qarzdor", "mijoz", "yxati"])))
+@router.message(StateFilter('*'), F.text.func(lambda t: t and any(k in t.lower() for k in ["qarzdor", "haqdor", "qarz beruvchi", "yxati"])))
 async def list_customers_cmd(message: Message, state: FSMContext):
     await state.clear()
-    shop = await db.get_shop_by_admin(message.from_user.id)
+    user_id = message.from_user.id
+    shop = await db.get_shop_by_admin(user_id)
     if not shop:
         from keyboards.admin_kb import get_open_store_kb
         await message.answer(
@@ -376,37 +419,48 @@ async def list_customers_cmd(message: Message, state: FSMContext):
         )
         return
     
-    customers = await db.list_shop_customers(shop['id'], sort_by_debt=True)
+    mode = get_user_ledger_mode(user_id)
+    customers = await db.list_shop_customers(shop['id'], sort_by_debt=True, ledger_type=mode)
+    
     if not customers:
-        await message.answer("Sizda hali qarzdorlar mavjud emas. '➕ Yangi qo'shish' tugmasi orqali qo'shishingiz yoki QR kodni berishingiz mumkin.")
+        if mode == 'payable':
+            await message.answer("Sizda hali qarz beruvchilar (haqdorlar) mavjud emas.\n'➕ Yangi qarz olish (Haqdor)' tugmasi orqali qo'shishingiz mumkin.")
+        else:
+            await message.answer("Sizda hali qarzdorlar mavjud emas.\n'➕ Yangi qo'shish' tugmasi orqali qo'shishingiz yoki QR kodni berishingiz mumkin.")
         return
     
     kb = get_customers_list_kb(customers, page=0)
-    await message.answer("📋 <b>Qarzdorlar ro'yxati</b> (Eng katta qarz egalari tepada):\nKerakli shaxsni tanlang:", reply_markup=kb, parse_mode="HTML")
+    title = "📋 <b>Haqdorlar (Qarz beruvchilar) ro'yxati</b>:" if mode == 'payable' else "📋 <b>Qarzdorlar ro'yxati</b> (Eng katta qarz egalari tepada):"
+    await message.answer(f"{title}\nKerakli shaxsni tanlang:", reply_markup=kb, parse_mode="HTML")
 
 @router.callback_query(F.data.startswith("page_"))
 async def paginate_customers(call: CallbackQuery):
     page = int(call.data.split("_")[1])
-    shop = await db.get_shop_by_admin(call.from_user.id)
+    user_id = call.from_user.id
+    shop = await db.get_shop_by_admin(user_id)
     if not shop:
         await call.answer()
         return
     
-    customers = await db.list_shop_customers(shop['id'], sort_by_debt=True)
+    mode = get_user_ledger_mode(user_id)
+    customers = await db.list_shop_customers(shop['id'], sort_by_debt=True, ledger_type=mode)
     kb = get_customers_list_kb(customers, page=page)
     await call.message.edit_reply_markup(reply_markup=kb)
     await call.answer()
 
 @router.callback_query(F.data == "back_to_list")
 async def back_to_customers_list(call: CallbackQuery):
-    shop = await db.get_shop_by_admin(call.from_user.id)
+    user_id = call.from_user.id
+    shop = await db.get_shop_by_admin(user_id)
     if not shop:
         await call.answer()
         return
     
-    customers = await db.list_shop_customers(shop['id'], sort_by_debt=True)
+    mode = get_user_ledger_mode(user_id)
+    customers = await db.list_shop_customers(shop['id'], sort_by_debt=True, ledger_type=mode)
     kb = get_customers_list_kb(customers, page=0)
-    await call.message.edit_text("📋 <b>Mijozlar ro'yxati:</b>", reply_markup=kb, parse_mode="HTML")
+    title = "📋 <b>Haqdorlar ro'yxati:</b>" if mode == 'payable' else "📋 <b>Qarzdorlar ro'yxati:</b>"
+    await call.message.edit_text(title, reply_markup=kb, parse_mode="HTML")
     await call.answer()
 
 # ==================== MIJOZNI KO'RISH ====================
@@ -427,7 +481,12 @@ async def view_customer_detail(call: CallbackQuery, bot: Bot):
         status_tg = "✅ Telegram ulangan" if customer.get('telegram_id') else "❌ Telegram hali ulanmagan"
         phone_text = str(customer['phone']) if customer.get('phone') else "Kiritilmagan"
         due_str = str(customer['due_date'])[:10] if customer.get('due_date') else None
-        due_display = f"📅 <b>To'lov muddati:</b> <code>{due_str}</code> gacha\n" if due_str else ""
+        
+        ledger_type = customer.get('ledger_type', 'receivable')
+        person_label = "Haqdor (Qarz beruvchi)" if ledger_type == 'payable' else "Mijoz / Qarzdor"
+        due_label = "Qaytarish muddati" if ledger_type == 'payable' else "To'lov muddati"
+        due_display = f"📅 <b>{due_label}:</b> <code>{due_str}</code> gacha\n" if due_str else ""
+        
         safe_name = html.escape(str(customer.get('full_name', 'Mijoz')))
         safe_phone = html.escape(phone_text)
         
@@ -437,12 +496,12 @@ async def view_customer_detail(call: CallbackQuery, bot: Bot):
         if bal_uzs > 0 and bal_usd > 0:
             balance_display = f"💰 <b>So'm qarzi:</b> <b>{format_money(bal_uzs, 'UZS')}</b>\n💵 <b>Dollar qarzi:</b> <b>{format_money(bal_usd, 'USD')}</b>"
         elif bal_usd > 0:
-            balance_display = f"💵 <b>Joriy qarz/nasiya balansi:</b> <b>{format_money(bal_usd, 'USD')}</b>"
+            balance_display = f"💵 <b>Joriy qarz balansi:</b> <b>{format_money(bal_usd, 'USD')}</b>"
         else:
-            balance_display = f"💰 <b>Joriy qarz/nasiya balansi:</b> <b>{format_money(bal_uzs, 'UZS')}</b>"
+            balance_display = f"💰 <b>Joriy qarz balansi:</b> <b>{format_money(bal_uzs, 'UZS')}</b>"
             
         text = (
-            f"👤 <b>Mijoz:</b> {safe_name}\n"
+            f"👤 <b>{person_label}:</b> {safe_name}\n"
             f"📞 <b>Telefon:</b> <code>{safe_phone}</code>\n"
             f"📱 <b>Holat:</b> {status_tg}\n"
             f"{due_display}"
@@ -455,7 +514,8 @@ async def view_customer_detail(call: CallbackQuery, bot: Bot):
             shop_id=customer['shop_id'], 
             phone=customer.get('phone'),
             telegram_id=customer.get('telegram_id'),
-            due_date_str=due_str
+            due_date_str=due_str,
+            ledger_type=ledger_type
         )
         try:
             await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
@@ -644,32 +704,29 @@ async def delete_customer_callback(call: CallbackQuery):
 
 @router.message(StateFilter('*'), F.text.contains("Yangi") | F.text.contains("shish") | F.text.contains("Qo'shish") | F.text.contains("qo'shish"))
 async def add_customer_start(message: Message, state: FSMContext):
-    await state.clear()
-    shop = await db.get_shop_by_admin(message.from_user.id)
-    if not shop:
-        from keyboards.admin_kb import get_open_store_kb
-        await message.answer(
-            "⚠️ Sizda hali faol qarz daftari ochilmagan.\n"
-            "Daftaringizni ochish uchun quyidagi tugmani tanlang 👇",
-            reply_markup=get_open_store_kb()
-        )
-        return
-        
+    mode = get_user_ledger_mode(message.from_user.id)
     await state.set_state(AdminStates.add_customer_name)
-    await message.answer(
-        "👤 <b>Yangi qarzdorning Ism va Familiyasini kiriting:</b>\n<i>(Masalan: Jamshid Karimov yoki Rustam)</i>",
-        parse_mode="HTML",
-        reply_markup=get_cancel_kb()
-    )
+    await state.update_data(ledger_type=mode)
+    
+    if mode == 'payable':
+        prompt_name = "👤 <b>Yangi haqdorning (Qarz beruvchi shaxs yoki do'kon) Ismini kiriting:</b>\n<i>(Masalan: Akmal aka, Rayhon Market, Jamshid)</i>"
+    else:
+        prompt_name = "👤 <b>Yangi qarzdorning Ism va Familiyasini kiriting:</b>\n<i>(Masalan: Jamshid Karimov yoki Rustam)</i>"
+        
+    await message.answer(prompt_name, parse_mode="HTML", reply_markup=get_cancel_kb())
 
 @router.callback_query(F.data == "manual_add_cust")
 async def start_manual_customer_add(call: CallbackQuery, state: FSMContext):
+    mode = get_user_ledger_mode(call.from_user.id)
     await state.set_state(AdminStates.add_customer_name)
-    await call.message.answer(
-        "👤 <b>Yangi qarzdorning Ism va Familiyasini kiriting:</b>\n<i>(Masalan: Jamshid Karimov yoki Rustam)</i>",
-        parse_mode="HTML",
-        reply_markup=get_cancel_kb()
-    )
+    await state.update_data(ledger_type=mode)
+    
+    if mode == 'payable':
+        prompt_name = "👤 <b>Yangi haqdorning (Qarz beruvchi shaxs yoki do'kon) Ismini kiriting:</b>\n<i>(Masalan: Akmal aka, Rayhon Market, Jamshid)</i>"
+    else:
+        prompt_name = "👤 <b>Yangi qarzdorning Ism va Familiyasini kiriting:</b>\n<i>(Masalan: Jamshid Karimov yoki Rustam)</i>"
+        
+    await call.message.answer(prompt_name, parse_mode="HTML", reply_markup=get_cancel_kb())
     await call.answer()
 
 @router.message(AdminStates.add_customer_name)
@@ -678,11 +735,16 @@ async def process_customer_name(message: Message, state: FSMContext):
     if len(name) < 2:
         await message.answer("Iltimos, haqiqiy ism kiriting:")
         return
-    await state.update_data(full_name=name)
+        
+    data = await state.get_data()
+    mode = data.get('ledger_type') or get_user_ledger_mode(message.from_user.id)
+    await state.update_data(full_name=name, ledger_type=mode)
     await state.set_state(AdminStates.add_customer_phone)
+    
+    person_role = "Haqdor (Qarz beruvchi)" if mode == 'payable' else "Qarzdor"
     from keyboards.admin_kb import get_phone_input_kb
     await message.answer(
-        f"👤 Qarzdor: <b>{name}</b>\n\n"
+        f"👤 {person_role}: <b>{name}</b>\n\n"
         f"📞 Endi uning <b>telefon raqamini</b> yozing:\n"
         f"<i>(Masalan: +998 90 123 45 67 yoki 901234567)</i>\n\n"
         f"💡 <i>Agar telefon raqami hozir bo'lmasa, pastdagi <b>«⏩ Raqamsiz davom etish»</b> tugmasini bosing:</i>",
@@ -706,40 +768,49 @@ async def process_customer_phone(message: Message, state: FSMContext, bot: Bot):
         
         data = await state.get_data()
         full_name = data.get('full_name', 'Mijoz')
+        mode = data.get('ledger_type') or get_user_ledger_mode(message.from_user.id)
+        
         shop = await db.get_shop_by_admin(message.from_user.id)
         if not shop:
             await message.answer("⚠️ Daftaringiz topilmadi. Iltimos /start ni bosing.")
             await state.clear()
             return
             
-        cust_id = await db.add_customer(shop['id'], full_name, phone)
+        cust_id = await db.add_customer(shop['id'], full_name, phone, ledger_type=mode)
         await state.clear()
         
         bot_info = await bot.get_me()
         is_sa = message.from_user.id in config.SUPER_ADMIN_IDS
+        is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
         
         import html
         safe_name = html.escape(full_name)
         safe_phone = html.escape(phone) if phone else "Kiritilmadi"
         
+        if mode == 'payable':
+            success_title = "🎉 <b>Yangi haqdor muvaffaqiyatli qo'shildi!</b>"
+            action_prompt = f"👇 <b>{safe_name}</b> dan yangi qarz olish yoki amalni tanlang:"
+        else:
+            success_title = "🎉 <b>Yangi qarzdor muvaffaqiyatli qo'shildi!</b>"
+            action_prompt = f"👇 <b>{safe_name}</b> ga qarz yozish yoki amalni tanlang:"
+            
         await message.answer(
-            f"🎉 <b>Yangi qarzdor muvaffaqiyatli qo'shildi!</b>\n\n"
+            f"{success_title}\n\n"
             f"👤 Ismi: <b>{safe_name}</b>\n"
             f"📞 Telefoni: <code>{safe_phone}</code>\n"
             f"💰 Joriy qarzi: <b>0 so'm</b>",
             parse_mode="HTML",
-            reply_markup=get_admin_main_kb(is_sa)
+            reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=mode)
         )
         
-        kb = get_customer_actions_kb(cust_id, bot_info.username, shop['id'], phone)
+        kb = get_customer_actions_kb(cust_id, bot_info.username, shop['id'], phone, ledger_type=mode)
         await message.answer(
-            f"👇 <b>{safe_name}</b> ga qarz yozish yoki amalni tanlang:",
+            action_prompt,
             reply_markup=kb,
             parse_mode="HTML"
         )
     except Exception as e:
-        logger.error(f"process_customer_phone xatosi: {e}")
-        await message.answer(f"⚠️ Qarzdor qo'shishda xatolik yuz berdi: {e}")
+        await message.answer(f"⚠️ Xatolik yuz berdi: {e}")
         await state.clear()
 
 # ==================== QARZ YOZISH (SUMMA + IZOH) ====================
@@ -853,51 +924,86 @@ async def process_debt_description(message: Message, state: FSMContext, bot: Bot
     else:
         balance_summary = format_money(bal_uzs, 'UZS')
     
-    msg_text = (
-        f"✅ <b>Qarz / Nasiya muvaffaqiyatli yozildi!</b>\n\n"
-        f"👤 Qarzdor/Mijoz: <b>{safe_name}</b>\n"
-        f"➕ Qo'shilgan summa: <b>{format_money(data['debt_amount'], currency)}</b>\n"
-        f"📝 Izoh / Sabab: <i>{html.escape(desc) if desc else 'Kiritilmadi'}</i>\n"
-        f"💰 Jami qarz balansi: <b>{balance_summary}</b>"
-    )
+    ledger_type = updated_customer.get('ledger_type', 'receivable')
+    is_payable = (ledger_type == 'payable')
+    is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
+    
+    if is_payable:
+        msg_text = (
+            f"✅ <b>Qarz muvaffaqiyatli qayd etildi!</b>\n\n"
+            f"👤 Haqdor (Qarz beruvchi): <b>{safe_name}</b>\n"
+            f"➕ Olingan qarz summasi: <b>{format_money(data['debt_amount'], currency)}</b>\n"
+            f"📝 Izoh / Sabab: <i>{html.escape(desc) if desc else 'Kiritilmadi'}</i>\n"
+            f"💰 Sizning unga jami qarz balansingiz: <b>{balance_summary}</b>"
+        )
+    else:
+        msg_text = (
+            f"✅ <b>Qarz / Nasiya muvaffaqiyatli yozildi!</b>\n\n"
+            f"👤 Qarzdor/Mijoz: <b>{safe_name}</b>\n"
+            f"➕ Qo'shilgan summa: <b>{format_money(data['debt_amount'], currency)}</b>\n"
+            f"📝 Izoh / Sabab: <i>{html.escape(desc) if desc else 'Kiritilmadi'}</i>\n"
+            f"💰 Jami qarz balansi: <b>{balance_summary}</b>"
+        )
     
     # Agar mijoz hali botga ulanmagan bo'lsa, Telegram orqali yuborish tugmasini chiqaramiz
     notify_kb = None
     if not updated_customer.get('telegram_id'):
         cust_link = f"https://t.me/{bot_info.username}?start=c_{updated_customer['id']}"
-        share_text = (
-            f"Assalomu alaykum, {updated_customer['full_name']}!\n\n"
-            f"«{shop['name']}» da sizning hisobingizga yangi qarz/nasiya yozildi: +{format_money(data['debt_amount'], currency)}\n"
-            f"📝 Izoh: {desc or 'Xarid'}\n"
-            f"💰 Jami qarzingiz: {balance_summary}\n\n"
-            f"Hisob-kitobni bot orqali kuzatib borish uchun ushbu havolani bosing:\n{cust_link}"
-        )
+        if is_payable:
+            share_text = (
+                f"Assalomu alaykum, {updated_customer['full_name']}!\n\n"
+                f"«{shop['name']}» dan hisob-kitob:\n"
+                f"Men sizdan yangi qarz oldim: +{format_money(data['debt_amount'], currency)}\n"
+                f"📝 Izoh: {desc or 'Qarz'}\n"
+                f"💰 Sizga berishim kerak bo'lgan jami qarzim: {balance_summary}\n\n"
+                f"Hisob-kitobni bot orqali kuzatib borish uchun ushbu havolani bosing:\n{cust_link}"
+            )
+            share_btn_text = "📤 Haqdorga hisobotni yuborish"
+        else:
+            share_text = (
+                f"Assalomu alaykum, {updated_customer['full_name']}!\n\n"
+                f"«{shop['name']}» da sizning hisobingizga yangi qarz/nasiya yozildi: +{format_money(data['debt_amount'], currency)}\n"
+                f"📝 Izoh: {desc or 'Xarid'}\n"
+                f"💰 Jami qarzingiz: {balance_summary}\n\n"
+                f"Hisob-kitobni bot orqali kuzatib borish uchun ushbu havolani bosing:\n{cust_link}"
+            )
+            share_btn_text = "📤 Qarzdorga Telegramdan hisobni yuborish"
+            
         share_url = f"https://t.me/share/url?url={quote(cust_link)}&text={quote(share_text)}"
         notify_kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="📤 Qarzdorga Telegramdan hisobni yuborish", url=share_url)],
-                [InlineKeyboardButton(text="👤 Qarzdor sahifasini ochish", callback_data=f"view_cust_{updated_customer['id']}")]
+                [InlineKeyboardButton(text=share_btn_text, url=share_url)],
+                [InlineKeyboardButton(text="👤 Sahifasini ochish", callback_data=f"view_cust_{updated_customer['id']}")]
             ]
         )
     else:
         # Allaqachon ulangan bo'lsa avtomatik xabar ketadi
         try:
-            client_notify = (
-                f"📌 <b>«{shop['name']}»</b> hisobingizdan xabar:\n\n"
-                f"Sizning hisobingizga yangi qarz / nasiya yozildi: <b>+{format_money(data['debt_amount'], currency)}</b>\n"
-                f"📝 Izoh / Sabab: <i>{html.escape(desc) if desc else 'Kiritilmadi'}</i>\n"
-                f"💰 Sizning jami balansingiz: <b>{balance_summary}</b>\n\n"
-                f"💬 <a href='tg://user?id={shop['admin_id']}'>Bog'lanish</a>"
-            )
+            if is_payable:
+                client_notify = (
+                    f"📌 <b>«{shop['name']}»</b> hisobingizdan xabar:\n\n"
+                    f"Sizdan yangi qarz olindi: <b>+{format_money(data['debt_amount'], currency)}</b>\n"
+                    f"📝 Izoh / Sabab: <i>{html.escape(desc) if desc else 'Kiritilmadi'}</i>\n"
+                    f"💰 Sizga qaytarilishi kerak bo'lgan jami balans: <b>{balance_summary}</b>\n\n"
+                    f"💬 <a href='tg://user?id={shop['admin_id']}'>Bog'lanish</a>"
+                )
+            else:
+                client_notify = (
+                    f"📌 <b>«{shop['name']}»</b> hisobingizdan xabar:\n\n"
+                    f"Sizning hisobingizga yangi qarz / nasiya yozildi: <b>+{format_money(data['debt_amount'], currency)}</b>\n"
+                    f"📝 Izoh / Sabab: <i>{html.escape(desc) if desc else 'Kiritilmadi'}</i>\n"
+                    f"💰 Sizning jami balansingiz: <b>{balance_summary}</b>\n\n"
+                    f"💬 <a href='tg://user?id={shop['admin_id']}'>Bog'lanish</a>"
+                )
             await bot.send_message(chat_id=updated_customer['telegram_id'], text=client_notify, parse_mode="HTML")
         except Exception:
             pass
 
-    await message.answer(msg_text, parse_mode="HTML", reply_markup=notify_kb or get_admin_main_kb(is_sa))
+    await message.answer(msg_text, parse_mode="HTML", reply_markup=notify_kb or get_admin_main_kb(is_sa, days_left=days_left, ledger_type=ledger_type))
     if notify_kb:
-        await message.answer("Boshqaruv menyusi:", reply_markup=get_admin_main_kb(is_sa))
+        await message.answer("Boshqaruv menyusi:", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=ledger_type))
 
-# ==================== TO'LOV QABUL QILISH ====================
+# ==================== TO'LOV QABUL QILISH / TO'LOV QILISH ====================
 
 @router.callback_query(F.data.startswith("pay_"))
 async def start_add_payment(call: CallbackQuery, state: FSMContext):
@@ -908,8 +1014,11 @@ async def start_add_payment(call: CallbackQuery, state: FSMContext):
         return
     
     await state.clear()
+    ledger_type = customer.get('ledger_type', 'receivable')
+    prompt_text = f"➖ <b>{customer['full_name']}</b> ga qarzni to'lash uchun <b>valyutani tanlang</b>:" if ledger_type == 'payable' else f"➖ <b>{customer['full_name']}</b> dan to'lov qabul qilish uchun <b>valyutani tanlang</b>:"
+    
     await call.message.edit_text(
-        f"➖ <b>{customer['full_name']}</b> dan to'lov qabul qilish uchun <b>valyutani tanlang</b>:",
+        prompt_text,
         reply_markup=get_currency_select_kb("pay", customer_id),
         parse_mode="HTML"
     )
@@ -930,13 +1039,16 @@ async def process_pay_currency_choice(call: CallbackQuery, state: FSMContext):
     curr_balance = customer.get('balance_usd', 0.0) if currency == 'USD' else customer.get('balance', 0.0)
     example_val = "100 yoki 50.5" if currency == 'USD' else "50000 yoki 1500000"
     
+    ledger_type = customer.get('ledger_type', 'receivable')
+    prompt_q = f"➖ <b>{customer['full_name']}</b> ga qancha to'lov qildingiz? ({curr_label}):" if ledger_type == 'payable' else f"➖ <b>{customer['full_name']}</b> qancha to'lov qildi? ({curr_label}):"
+    
     await state.set_state(AdminStates.add_payment_amount)
     await state.update_data(customer_id=customer_id, currency=currency)
     
     await call.message.answer(
-        f"➖ <b>{customer['full_name']}</b> qancha to'lov qildi? ({curr_label}):\n"
+        f"{prompt_q}\n"
         f"<i>(Masalan: {example_val})</i>\n"
-        f"Hozirgi umumiy qarzi: <b>{format_money(curr_balance, currency)}</b>",
+        f"Hozirgi umumiy qarz: <b>{format_money(curr_balance, currency)}</b>",
         parse_mode="HTML",
         reply_markup=get_cancel_kb()
     )
@@ -968,6 +1080,7 @@ async def process_payment_amount(message: Message, state: FSMContext, bot: Bot):
     
     await state.clear()
     is_sa = message.from_user.id in config.SUPER_ADMIN_IDS
+    is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
     bot_info = await bot.get_me()
     
     import html
@@ -985,47 +1098,80 @@ async def process_payment_amount(message: Message, state: FSMContext, bot: Bot):
     else:
         balance_summary = format_money(bal_uzs, 'UZS')
     
-    msg_text = (
-        f"✅ <b>To'lov qabul qilindi!</b>\n\n"
-        f"👤 Mijoz: <b>{safe_name}</b>\n"
-        f"➖ Qabul qilingan to'lov: <b>{format_money(amount, currency)}</b>\n"
-        f"💰 Qolgan qarz balansi: <b>{balance_summary}</b>"
-    )
+    ledger_type = updated_customer.get('ledger_type', 'receivable')
+    is_payable = (ledger_type == 'payable')
+    
+    if is_payable:
+        msg_text = (
+            f"✅ <b>To'lov qayd etildi!</b>\n\n"
+            f"👤 Haqdor: <b>{safe_name}</b>\n"
+            f"➖ Qaytarilgan to'lov: <b>{format_money(amount, currency)}</b>\n"
+            f"💰 Sizning unga qolgan qarz balansingiz: <b>{balance_summary}</b>"
+        )
+    else:
+        msg_text = (
+            f"✅ <b>To'lov qabul qilindi!</b>\n\n"
+            f"👤 Mijoz: <b>{safe_name}</b>\n"
+            f"➖ Qabul qilingan to'lov: <b>{format_money(amount, currency)}</b>\n"
+            f"💰 Qolgan qarz balansi: <b>{balance_summary}</b>"
+        )
     
     # Agar mijoz hali ulanmagan bo'lsa, Telegramdan to'lov chekini jo'natish tugmasi
     notify_kb = None
     if not updated_customer.get('telegram_id'):
         cust_link = f"https://t.me/{bot_info.username}?start=c_{updated_customer['id']}"
-        share_text = (
-            f"Assalomu alaykum, {updated_customer['full_name']}!\n\n"
-            f"«{shop['name']}» da sizning {format_money(amount, currency)} to'lovingiz qabul qilindi.\n"
-            f"💰 Qolgan qarz balansingiz: {balance_summary}\n"
-            f"Rahmat!\n\n"
-            f"Hisobingizni botda kuzatib borish uchun:\n{cust_link}"
-        )
+        if is_payable:
+            share_text = (
+                f"Assalomu alaykum, {updated_customer['full_name']}!\n\n"
+                f"«{shop['name']}» dan hisob-kitob:\n"
+                f"Sizga {format_money(amount, currency)} to'lov qaytarildi.\n"
+                f"💰 Qolgan qarz balansi: {balance_summary}\n"
+                f"Rahmat!\n\n"
+                f"Hisobingizni botda kuzatib borish uchun:\n{cust_link}"
+            )
+            share_btn_text = "📤 Haqdorga to'lov chekini yuborish"
+        else:
+            share_text = (
+                f"Assalomu alaykum, {updated_customer['full_name']}!\n\n"
+                f"«{shop['name']}» da sizning {format_money(amount, currency)} to'lovingiz qabul qilindi.\n"
+                f"💰 Qolgan qarz balansingiz: {balance_summary}\n"
+                f"Rahmat!\n\n"
+                f"Hisobingizni botda kuzatib borish uchun:\n{cust_link}"
+            )
+            share_btn_text = "📤 Qarzdorga Telegramdan to'lov chekini yuborish"
+            
         share_url = f"https://t.me/share/url?url={quote(cust_link)}&text={quote(share_text)}"
         notify_kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="📤 Qarzdorga Telegramdan to'lov chekini yuborish", url=share_url)],
-                [InlineKeyboardButton(text="👤 Qarzdor sahifasini ochish", callback_data=f"view_cust_{updated_customer['id']}")]
+                [InlineKeyboardButton(text=share_btn_text, url=share_url)],
+                [InlineKeyboardButton(text="👤 Sahifasini ochish", callback_data=f"view_cust_{updated_customer['id']}")]
             ]
         )
     else:
         try:
-            client_notify = (
-                f"✅ <b>«{shop['name']}»</b> hisobingizdan xabar:\n\n"
-                f"Sizning <b>{format_money(amount, currency)}</b> to'lovingiz qabul qilindi.\n"
-                f"💰 Qolgan qarz balansingiz: <b>{balance_summary}</b>\n"
-                f"Rahmat!\n\n"
-                f"💬 <a href='tg://user?id={shop['admin_id']}'>Qarz beruvchi bilan bog'lanish</a>"
-            )
+            if is_payable:
+                client_notify = (
+                    f"✅ <b>«{shop['name']}»</b> hisobingizdan xabar:\n\n"
+                    f"Sizga <b>{format_money(amount, currency)}</b> qarz qaytarildi.\n"
+                    f"💰 Qolgan qarz balansi: <b>{balance_summary}</b>\n"
+                    f"Rahmat!\n\n"
+                    f"💬 <a href='tg://user?id={shop['admin_id']}'>Bog'lanish</a>"
+                )
+            else:
+                client_notify = (
+                    f"✅ <b>«{shop['name']}»</b> hisobingizdan xabar:\n\n"
+                    f"Sizning <b>{format_money(amount, currency)}</b> to'lovingiz qabul qilindi.\n"
+                    f"💰 Qolgan qarz balansingiz: <b>{balance_summary}</b>\n"
+                    f"Rahmat!\n\n"
+                    f"💬 <a href='tg://user?id={shop['admin_id']}'>Qarz beruvchi bilan bog'lanish</a>"
+                )
             await bot.send_message(chat_id=updated_customer['telegram_id'], text=client_notify, parse_mode="HTML")
         except Exception:
             pass
             
-    await message.answer(msg_text, parse_mode="HTML", reply_markup=notify_kb or get_admin_main_kb(is_sa))
+    await message.answer(msg_text, parse_mode="HTML", reply_markup=notify_kb or get_admin_main_kb(is_sa, days_left=days_left, ledger_type=ledger_type))
     if notify_kb:
-        await message.answer("Boshqaruv menyusi:", reply_markup=get_admin_main_kb(is_sa))
+        await message.answer("Boshqaruv menyusi:", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=ledger_type))
 
 # ==================== QIDIRUV ====================
 
@@ -1034,21 +1180,27 @@ async def search_customer_start(message: Message, state: FSMContext):
     shop = await db.get_shop_by_admin(message.from_user.id)
     if not shop:
         return
+    mode = get_user_ledger_mode(message.from_user.id)
+    person_type = "haqdorning" if mode == 'payable' else "qarzdorning"
     await state.set_state(AdminStates.search_customer)
-    await message.answer("Qidirilayotgan mijozning <b>ism yoki telefon raqamini</b> yozing:", parse_mode="HTML", reply_markup=get_cancel_kb())
+    await message.answer(f"Qidirilayotgan {person_type} <b>ism yoki telefon raqamini</b> yozing:", parse_mode="HTML", reply_markup=get_cancel_kb())
 
 @router.message(AdminStates.search_customer)
 async def process_search_customer(message: Message, state: FSMContext):
     query = message.text.strip()
-    shop = await db.get_shop_by_admin(message.from_user.id)
-    customers = await db.search_customers(shop['id'], query)
+    user_id = message.from_user.id
+    shop = await db.get_shop_by_admin(user_id)
+    mode = get_user_ledger_mode(user_id)
+    customers = await db.search_customers(shop['id'], query, ledger_type=mode)
     
     await state.clear()
-    is_sa = message.from_user.id in config.SUPER_ADMIN_IDS
+    is_sa = user_id in config.SUPER_ADMIN_IDS
+    is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
     
     if not customers:
-        await message.answer(f"🔍 '{query}' bo'yicha hech qanday mijoz topilmadi.", reply_markup=get_admin_main_kb(is_sa))
+        await message.answer(f"🔍 '{query}' bo'yicha hech kim topilmadi.", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=mode))
         return
     
     kb = get_customers_list_kb(customers, page=0)
-    await message.answer(f"🔍 '{query}' bo'yicha topilgan mijozlar:", reply_markup=kb, reply_markup_after=get_admin_main_kb(is_sa))
+    await message.answer(f"🔍 '{query}' bo'yicha topilgan natijalar:", reply_markup=kb, parse_mode="HTML")
+    await message.answer("Boshqaruv menyusi:", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=mode))

@@ -67,7 +67,7 @@ async def init_db():
                 )
             """)
 
-            # 4. Customers jadvali (due_date va balance_usd bilan)
+            # 4. Customers jadvali (due_date, balance_usd va ledger_type bilan)
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS customers (
                     id SERIAL PRIMARY KEY,
@@ -77,6 +77,7 @@ async def init_db():
                     phone TEXT,
                     balance DOUBLE PRECISION DEFAULT 0.0,
                     balance_usd DOUBLE PRECISION DEFAULT 0.0,
+                    ledger_type VARCHAR(20) DEFAULT 'receivable',
                     due_date TIMESTAMP,
                     created_at TIMESTAMP DEFAULT NOW(),
                     UNIQUE(shop_id, telegram_id)
@@ -86,6 +87,7 @@ async def init_db():
             try:
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS due_date TIMESTAMP")
                 await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS balance_usd DOUBLE PRECISION DEFAULT 0.0")
+                await conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS ledger_type VARCHAR(20) DEFAULT 'receivable'")
             except Exception:
                 pass
 
@@ -170,6 +172,7 @@ async def init_db():
                     phone TEXT,
                     balance REAL DEFAULT 0.0,
                     balance_usd REAL DEFAULT 0.0,
+                    ledger_type TEXT DEFAULT 'receivable',
                     due_date TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY(shop_id) REFERENCES shops(id),
@@ -182,6 +185,10 @@ async def init_db():
                 pass
             try:
                 await db.execute("ALTER TABLE customers ADD COLUMN due_date TIMESTAMP")
+            except Exception:
+                pass
+            try:
+                await db.execute("ALTER TABLE customers ADD COLUMN ledger_type TEXT DEFAULT 'receivable'")
             except Exception:
                 pass
             await db.execute("""
@@ -561,23 +568,24 @@ async def delete_shop(shop_id: int):
             await db.execute("DELETE FROM shops WHERE id = ?", (shop_id,))
             await db.commit()
 
-# ==================== CUSTOMERS (MIJOZLAR) ====================
+# ==================== CUSTOMERS (MIJOZLAR VA HAQDORLAR) ====================
 
-async def add_customer(shop_id: int, full_name: str, phone: str = None, telegram_id: int = None) -> int:
+async def add_customer(shop_id: int, full_name: str, phone: str = None, telegram_id: int = None, ledger_type: str = 'receivable') -> int:
+    ledger_type = ledger_type or 'receivable'
     if USE_POSTGRES:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow("""
-                INSERT INTO customers (shop_id, full_name, phone, telegram_id)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO customers (shop_id, full_name, phone, telegram_id, ledger_type)
+                VALUES ($1, $2, $3, $4, $5)
                 RETURNING id
-            """, shop_id, full_name, phone, telegram_id)
+            """, shop_id, full_name, phone, telegram_id, ledger_type)
             return row['id']
     else:
         async with aiosqlite.connect(DB_PATH) as db:
             cursor = await db.execute(
-                "INSERT INTO customers (shop_id, full_name, phone, telegram_id) VALUES (?, ?, ?, ?)",
-                (shop_id, full_name, phone, telegram_id)
+                "INSERT INTO customers (shop_id, full_name, phone, telegram_id, ledger_type) VALUES (?, ?, ?, ?, ?)",
+                (shop_id, full_name, phone, telegram_id, ledger_type)
             )
             await db.commit()
             return cursor.lastrowid
@@ -685,40 +693,64 @@ async def get_due_reminders():
                 rows = await cursor.fetchall()
                 return [dict(r) for r in rows]
 
-async def get_customers_by_shop(shop_id: int):
+async def get_customers_by_shop(shop_id: int, ledger_type: str = None):
     if USE_POSTGRES:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
-            rows = await conn.fetch("SELECT * FROM customers WHERE shop_id = $1 ORDER BY balance DESC, full_name ASC", shop_id)
+            if ledger_type:
+                rows = await conn.fetch("SELECT * FROM customers WHERE shop_id = $1 AND COALESCE(ledger_type, 'receivable') = $2 ORDER BY balance DESC, balance_usd DESC, full_name ASC", shop_id, ledger_type)
+            else:
+                rows = await conn.fetch("SELECT * FROM customers WHERE shop_id = $1 ORDER BY balance DESC, balance_usd DESC, full_name ASC", shop_id)
             return [dict(r) for r in rows]
     else:
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT * FROM customers WHERE shop_id = ? ORDER BY balance DESC, full_name ASC", (shop_id,)) as cursor:
-                rows = await cursor.fetchall()
-                return [dict(r) for r in rows]
+            if ledger_type:
+                async with db.execute("SELECT * FROM customers WHERE shop_id = ? AND COALESCE(ledger_type, 'receivable') = ? ORDER BY balance DESC, balance_usd DESC, full_name ASC", (shop_id, ledger_type)) as cursor:
+                    rows = await cursor.fetchall()
+                    return [dict(r) for r in rows]
+            else:
+                async with db.execute("SELECT * FROM customers WHERE shop_id = ? ORDER BY balance DESC, balance_usd DESC, full_name ASC", (shop_id,)) as cursor:
+                    rows = await cursor.fetchall()
+                    return [dict(r) for r in rows]
 
-async def search_customers(shop_id: int, query: str):
+async def search_customers(shop_id: int, query: str, ledger_type: str = None):
     search = f"%{query.strip()}%"
     if USE_POSTGRES:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
-            rows = await conn.fetch("""
-                SELECT * FROM customers 
-                WHERE shop_id = $1 AND (full_name ILIKE $2 OR phone ILIKE $2)
-                ORDER BY full_name ASC
-            """, shop_id, search)
+            if ledger_type:
+                rows = await conn.fetch("""
+                    SELECT * FROM customers 
+                    WHERE shop_id = $1 AND COALESCE(ledger_type, 'receivable') = $2 AND (full_name ILIKE $3 OR phone ILIKE $3)
+                    ORDER BY full_name ASC
+                """, shop_id, ledger_type, search)
+            else:
+                rows = await conn.fetch("""
+                    SELECT * FROM customers 
+                    WHERE shop_id = $1 AND (full_name ILIKE $2 OR phone ILIKE $2)
+                    ORDER BY full_name ASC
+                """, shop_id, search)
             return [dict(r) for r in rows]
     else:
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
-            async with db.execute("""
-                SELECT * FROM customers 
-                WHERE shop_id = ? AND (full_name LIKE ? OR phone LIKE ?)
-                ORDER BY full_name ASC
-            """, (shop_id, search, search)) as cursor:
-                rows = await cursor.fetchall()
-                return [dict(r) for r in rows]
+            if ledger_type:
+                async with db.execute("""
+                    SELECT * FROM customers 
+                    WHERE shop_id = ? AND COALESCE(ledger_type, 'receivable') = ? AND (full_name LIKE ? OR phone LIKE ?)
+                    ORDER BY full_name ASC
+                """, (shop_id, ledger_type, search, search)) as cursor:
+                    rows = await cursor.fetchall()
+                    return [dict(r) for r in rows]
+            else:
+                async with db.execute("""
+                    SELECT * FROM customers 
+                    WHERE shop_id = ? AND (full_name LIKE ? OR phone LIKE ?)
+                    ORDER BY full_name ASC
+                """, (shop_id, search, search)) as cursor:
+                    rows = await cursor.fetchall()
+                    return [dict(r) for r in rows]
 
 async def get_customer(customer_id: int):
     if USE_POSTGRES:
@@ -900,8 +932,8 @@ async def get_shop_statistics(shop_id: int, period: str = 'all') -> dict:
                 'period': period
             }
 
-async def list_shop_customers(shop_id: int, sort_by_debt: bool = True):
-    return await get_customers_by_shop(shop_id)
+async def list_shop_customers(shop_id: int, sort_by_debt: bool = True, ledger_type: str = None):
+    return await get_customers_by_shop(shop_id, ledger_type=ledger_type)
 
 async def list_shop_admins(shop_id: int):
     return await get_shop_staff(shop_id)
