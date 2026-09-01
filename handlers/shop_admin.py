@@ -520,7 +520,7 @@ async def back_to_customers_list(call: CallbackQuery):
 
 from keyboards.admin_kb import get_due_date_select_kb
 
-async def render_customer_card(message: Message, customer_id: int, bot: Bot):
+async def render_customer_card(message: Message, customer_id: int, bot: Bot, user_id: int = None):
     customer = await db.get_customer(customer_id)
     if not customer:
         return
@@ -531,7 +531,10 @@ async def render_customer_card(message: Message, customer_id: int, bot: Bot):
     phone_text = str(customer['phone']) if customer.get('phone') else "Kiritilmagan"
     due_str = str(customer['due_date'])[:10] if customer.get('due_date') else None
     
-    ledger_type = customer.get('ledger_type', 'receivable')
+    chat_uid = user_id or message.chat.id
+    mode = get_user_ledger_mode(chat_uid)
+    ledger_type = customer.get('ledger_type') or mode
+    
     person_label = "Haqdor (Qarz beruvchi)" if ledger_type == 'payable' else "Mijoz / Qarzdor"
     due_label = "Qaytarish muddati" if ledger_type == 'payable' else "To'lov muddati"
     due_display = f"📅 <b>{due_label}:</b> <code>{due_str}</code> gacha\n" if due_str else ""
@@ -575,7 +578,7 @@ async def render_customer_card(message: Message, customer_id: int, bot: Bot):
 async def view_customer_detail(call: CallbackQuery, bot: Bot):
     try:
         customer_id = int(call.data.split("_")[2])
-        await render_customer_card(call.message, customer_id, bot)
+        await render_customer_card(call.message, customer_id, bot, user_id=call.from_user.id)
         await call.answer()
     except Exception as e:
         logger.error(f"view_customer_detail xatosi: {e}")
@@ -626,7 +629,10 @@ async def start_set_due_date(call: CallbackQuery):
         await call.answer("Mijoz topilmadi!", show_alert=True)
         return
         
-    ledger_type = customer.get('ledger_type', 'receivable')
+    user_id = call.from_user.id
+    mode = get_user_ledger_mode(user_id)
+    ledger_type = customer.get('ledger_type') or mode
+    
     if ledger_type == 'payable':
         text = (
             f"📅 <b>{customer['full_name']}</b> ga qarzni qaytarish muddatini tanlang:\n\n"
@@ -646,8 +652,10 @@ async def process_set_due_date(call: CallbackQuery, bot: Bot):
     customer_id = int(parts[1])
     days = int(parts[2])
     
+    user_id = call.from_user.id
+    mode = get_user_ledger_mode(user_id)
     customer = await db.get_customer(customer_id)
-    ledger_type = customer.get('ledger_type', 'receivable') if customer else 'receivable'
+    ledger_type = customer.get('ledger_type') or mode if customer else mode
     
     await db.set_customer_due_date(customer_id, days)
     
@@ -657,7 +665,7 @@ async def process_set_due_date(call: CallbackQuery, bot: Bot):
         msg = "✅ To'lov muddati olib tashlandi." if days == 0 else f"✅ To'lov muddati {days} kunga belgilandi!"
         
     await call.answer(msg, show_alert=True)
-    await render_customer_card(call.message, customer_id, bot)
+    await render_customer_card(call.message, customer_id, bot, user_id=user_id)
 
 # ==================== 3. SMS SHABLONI ====================
 
@@ -716,19 +724,27 @@ async def show_customer_history(call: CallbackQuery, bot: Bot):
         await call.answer("Mijoz topilmadi!", show_alert=True)
         return
     
-    bot_info = await bot.get_me()
-    txs = await db.get_customer_transactions(customer_id, limit=15)
+    user_id = call.from_user.id
+    mode = get_user_ledger_mode(user_id)
+    ledger_type = customer.get('ledger_type') or mode
+    is_payable = (ledger_type == 'payable')
     
-    text = f"📜 <b>{customer['full_name']}</b> — Qarz va to'lovlar tarixi:\n\n"
+    txs = await db.get_customer_transactions(customer_id, limit=20)
+    
+    person_title = "Haqdor" if is_payable else "Qarzdor"
+    text = f"📜 <b>{customer['full_name']} ({person_title})</b> — Amallar tarixi:\n\n"
     if not txs:
-        text += "<i>Hozircha hech qanday operatsiya yozilmagan.</i>"
+        text += "<i>Hozircha hech qanday operatsiya yozilmagan.</i>\n"
     else:
         for t in txs:
-            icon = "🔴 Qarz:" if t['type'] == 'debt' else "🟢 To'lov:"
+            if is_payable:
+                icon = "🔴 Olingan qarz:" if t['type'] == 'debt' else "🟢 Qaytarilgan to'lov:"
+            else:
+                icon = "🔴 Berilgan qarz:" if t['type'] == 'debt' else "🟢 Qabul qilingan to'lov:"
             desc = f" ({t['description']})" if t['description'] else ""
             date_str = str(t['created_at'])[:16]
             curr = t.get('currency', 'UZS') or 'UZS'
-            text += f"{icon} {format_money(t['amount'], curr)}{desc}\n📅 <i>{date_str}</i>\n───────────────\n"
+            text += f"{icon} <b>{format_money(t['amount'], curr)}</b>{desc}\n📅 <i>{date_str}</i>\n───────────────\n"
             
     bal_u = customer.get('balance', 0.0) or 0.0
     bal_d = customer.get('balance_usd', 0.0) or 0.0
@@ -739,10 +755,20 @@ async def show_customer_history(call: CallbackQuery, bot: Bot):
     else:
         total_bal_str = format_money(bal_u, 'UZS')
         
-    text += f"\n💰 <b>Jami qoldiq qarz: {total_bal_str}</b>"
+    debt_label = "Sizning unga jami qarz balansingiz" if is_payable else "Jami qoldiq qarz"
+    text += f"\n💰 <b>{debt_label}: {total_bal_str}</b>"
     
-    kb = get_customer_actions_kb(customer_id, bot_info.username, customer['shop_id'], customer['phone'])
-    await call.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    back_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Sahifasiga qaytish", callback_data=f"view_cust_{customer_id}")]
+        ]
+    )
+    
+    try:
+        await call.message.edit_text(text, reply_markup=back_kb, parse_mode="HTML")
+    except Exception:
+        pass
     await call.answer()
 
 # ==================== MIJOZNI O'CHIRISH ====================
