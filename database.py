@@ -661,21 +661,37 @@ async def set_customer_due_date(customer_id: int, days: int):
                 await db.execute("UPDATE customers SET due_date = datetime('now', ?) WHERE id = ?", (f"+{days} days", customer_id))
             await db.commit()
 
-async def set_customer_due_specific_date(customer_id: int, date_iso_str: str):
-    """Mijoz uchun aniq sana (YYYY-MM-DD) bo'yicha muddat belgilash"""
+async def set_customer_due_specific_date(customer_id: int, date_val):
+    """Mijoz uchun aniq sana bo'yicha muddat belgilash"""
+    from datetime import datetime, date, time
+    dt_obj = None
+    if date_val:
+        if isinstance(date_val, datetime):
+            dt_obj = date_val
+        elif isinstance(date_val, date):
+            dt_obj = datetime.combine(date_val, time(10, 0, 0))
+        elif isinstance(date_val, str):
+            clean_str = date_val.strip().replace("/", ".").replace("-", ".")
+            parts = [int(p) for p in clean_str.split(".") if p.isdigit()]
+            if len(parts) == 3:
+                if parts[0] > 1000:  # YYYY.MM.DD
+                    dt_obj = datetime(parts[0], parts[1], parts[2], 10, 0, 0)
+                else:  # DD.MM.YYYY
+                    dt_obj = datetime(parts[2], parts[1], parts[0], 10, 0, 0)
+
     if USE_POSTGRES:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
-            if not date_iso_str:
+            if not dt_obj:
                 await conn.execute("UPDATE customers SET due_date = NULL WHERE id = $1", customer_id)
             else:
-                await conn.execute("UPDATE customers SET due_date = $1::TIMESTAMP WHERE id = $2", f"{date_iso_str} 10:00:00", customer_id)
+                await conn.execute("UPDATE customers SET due_date = $1 WHERE id = $2", dt_obj, customer_id)
     else:
         async with aiosqlite.connect(DB_PATH) as db:
-            if not date_iso_str:
+            if not dt_obj:
                 await db.execute("UPDATE customers SET due_date = NULL WHERE id = ?", (customer_id,))
             else:
-                await db.execute("UPDATE customers SET due_date = ? WHERE id = ?", (f"{date_iso_str} 10:00:00", customer_id))
+                await db.execute("UPDATE customers SET due_date = ? WHERE id = ?", (dt_obj.strftime("%Y-%m-%d %H:%M:%S"), customer_id))
             await db.commit()
 
 async def get_due_reminders():

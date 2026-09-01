@@ -725,9 +725,8 @@ async def process_custom_due_date(message: Message, state: FSMContext, bot: Bot)
     ledger_type = data.get('due_ledger_type', 'receivable')
     await state.clear()
     
-    date_iso = parsed_date.strftime("%Y-%m-%d")
     date_formatted = parsed_date.strftime("%d.%m.%Y")
-    await db.set_customer_due_specific_date(customer_id, date_iso)
+    await db.set_customer_due_specific_date(customer_id, parsed_date)
     
     customer = await db.get_customer(customer_id)
     safe_name = customer['full_name'] if customer else "Mijoz"
