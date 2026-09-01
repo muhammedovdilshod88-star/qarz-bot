@@ -45,9 +45,9 @@ async def cancel_action(message: Message, state: FSMContext):
     else:
         await message.answer("Amal bekor qilindi.")
 
-# ==================== IKKI TOMONLAMA REJIMNI ALMASHTIRISH (SWITCH LEDGER) ====================
+# ==================== IKKI TOMONLAMA REJIMNI ALMASHTIRISH (SWITCH LEDGER TABS) ====================
 
-@router.message(StateFilter('*'), F.text.func(lambda t: t and ("berishim kerak" in t.lower() or "olishim kerak" in t.lower() or ("menga qarzlar" in t.lower() and "o'tish" in t.lower()) or ("mening qarzlarim" in t.lower() and "o'tish" in t.lower()))))
+@router.message(StateFilter('*'), F.text.func(lambda t: t and ("berishim kerak" in t.lower() or "olishim kerak" in t.lower() or "menga qarzlar" in t.lower() or "mening qarzlarim" in t.lower())))
 async def switch_ledger_mode(message: Message, state: FSMContext):
     await state.clear()
     user_id = message.from_user.id
@@ -58,25 +58,30 @@ async def switch_ledger_mode(message: Message, state: FSMContext):
     is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
     is_sa = user_id in config.SUPER_ADMIN_IDS
     current_mode = get_user_ledger_mode(user_id)
+    text_lower = message.text.lower()
     
-    if current_mode == 'receivable':
-        # Mening qarzlarimga o'tkazish
-        set_user_ledger_mode(user_id, 'payable')
+    # Qaysi tab bosilganini aniqlaymiz
+    if "berishim kerak" in text_lower or "mening qarzlarim" in text_lower:
+        target_mode = 'payable'
+    else:
+        target_mode = 'receivable'
+        
+    set_user_ledger_mode(user_id, target_mode)
+    
+    if target_mode == 'payable':
         text = (
-            f"🔴 <b>«MENING QARZLARIM (Men berishim kerak bo'lgan pullar)» rejimiga o'tdingiz!</b>\n\n"
+            f"🔴 <b>«MENING QARZLARIM (Men berishim kerak bo'lgan pullar)» rejimi faol! ✅</b>\n\n"
             f"Bu bo'limda siz o'zingiz boshqalardan olgan qarzlaringiz va haqdorlaringiz (qarz beruvchilar) ro'yxatini yuritishingiz mumkin.\n\n"
             f"👇 Quyidagi menyudan kerakli amalni tanlang:"
         )
-        await message.answer(text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type='payable'))
     else:
-        # Menga qarzlar rejimiga qaytarish
-        set_user_ledger_mode(user_id, 'receivable')
         text = (
-            f"🟢 <b>«MENGA QARZLAR (Menga qaytarishi kerak bo'lgan pullar)» rejimiga o'tdingiz!</b>\n\n"
+            f"🟢 <b>«MENGA QARZLAR (Menga qaytarishi kerak bo'lgan pullar)» rejimi faol! ✅</b>\n\n"
             f"Bu bo'limda siz boshqalarga bergan qarzlaringiz va qarzdorlar ro'yxatini boshqarasiz.\n\n"
             f"👇 Quyidagi menyudan kerakli amalni tanlang:"
         )
-        await message.answer(text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type='receivable'))
+        
+    await message.answer(text, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=target_mode))
 
 # ==================== SHERIKLAR (ADMINLAR) BOSHQARUVI ====================
 
