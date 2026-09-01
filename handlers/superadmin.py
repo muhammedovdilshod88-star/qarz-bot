@@ -16,6 +16,7 @@ class SuperAdminStates(StatesGroup):
     add_shop_admin_id = State()
     add_shop_phone = State()
     change_shop_admin_id = State()
+    search_shop_query = State()
 
 from aiogram.filters import StateFilter
 
@@ -35,7 +36,42 @@ def is_super_admin(user_id: int) -> bool:
 async def superadmin_panel(message: Message):
     if not is_super_admin(message.from_user.id):
         return
-    await message.answer("👑 <b>Super Admin Boshqaruv Paneli</b>\nBu yerdan yangi do'konlar ochishingiz va ularni boshqarishingiz mumkin.", reply_markup=get_superadmin_main_kb(), parse_mode="HTML")
+    await message.answer("👑 <b>Super Admin Boshqaruv Paneli</b>\nBu yerdan yangi do'konlar ochishingiz, qidirishingiz va ularni boshqarishingiz mumkin.", reply_markup=get_superadmin_main_kb(), parse_mode="HTML")
+
+# ==================== TEZKOR QIDIRISH VA TIKLASH ====================
+
+@router.message(F.text == "🔍 Qidirish va Tiklash")
+async def start_superadmin_search(message: Message, state: FSMContext):
+    if not is_super_admin(message.from_user.id):
+        return
+    await state.set_state(SuperAdminStates.search_shop_query)
+    text = (
+        "🔍 <b>Do'kon yoki Mijozni qidirish va Tiklash:</b>\n\n"
+        "Qidirilayotgan do'konning <b>Telefon raqami</b>, <b>Nomi</b> yoki <b>Telegram ID</b> sini kiriting:\n\n"
+        "<i>(Masalan: <code>901234567</code> yoki <code>Baraka Market</code> yoki <code>123456789</code>)</i>"
+    )
+    await message.answer(text, parse_mode="HTML", reply_markup=get_cancel_kb())
+
+@router.message(SuperAdminStates.search_shop_query)
+async def process_superadmin_search(message: Message, state: FSMContext):
+    if not is_super_admin(message.from_user.id):
+        return
+    q = message.text.strip()
+    shops = await db.search_shops(q)
+    await state.clear()
+    
+    if not shops:
+        await message.answer(
+            f"❌ «<b>{q}</b>» bo'yicha hech qanday do'kon topilmadi.\n\n"
+            "Iltimos, telefon raqami yoki nomini to'g'ri kiritib qaytadan urinib ko'ring.",
+            parse_mode="HTML",
+            reply_markup=get_superadmin_main_kb()
+        )
+        return
+        
+    text = f"🔍 «<b>{q}</b>» bo'yicha <b>{len(shops)} ta</b> do'kon topildi:\n\n<i>Boshqarish va Tiklash uchun do'konni tanlang:</i>"
+    kb = get_shops_list_kb(shops, filter_type="all")
+    await message.answer(text, reply_markup=kb, parse_mode="HTML")
 
 @router.message(F.text == "🔙 Asosiy menyu")
 async def back_to_main_panel(message: Message):

@@ -377,19 +377,61 @@ async def get_shop_by_phone(phone: str):
             for s in shops:
                 if s['phone']:
                     s_clean = "".join(filter(str.isdigit, s['phone']))
-                    if last_9 in s_clean:
-                        return dict(s)
+async def search_shops(query: str):
+    """Do'kon nomi, telefon raqami yoki admin Telegram ID si bo'yicha tezkor qidirish"""
+    clean_q = f"%{query.strip()}%"
+    if USE_POSTGRES:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT 
+                    s.id, s.name, s.admin_id, s.phone, s.is_active, s.subscription_until,
+                    EXTRACT(DAY FROM (s.subscription_until - NOW()))::INT as days_left,
+                    COUNT(DISTINCT c.id) as customers_count,
+                    COALESCE(SUM(CASE WHEN c.balance > 0 THEN c.balance ELSE 0 END), 0) as total_debt
+                FROM shops s
+                LEFT JOIN customers c ON s.id = c.shop_id
+                WHERE s.name ILIKE $1 
+                   OR s.phone ILIKE $1 
+                   OR CAST(s.admin_id AS TEXT) ILIKE $1
+                   OR CAST(s.id AS TEXT) = $2
+                GROUP BY s.id, s.name, s.admin_id, s.phone, s.is_active, s.subscription_until
+                ORDER BY s.id DESC
+                LIMIT 20
+            """, clean_q, query.strip())
+            return [dict(r) for r in rows]
     else:
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT * FROM shops") as cursor:
-                shops = await cursor.fetchall()
-                for s in shops:
-                    if s['phone']:
-                        s_clean = "".join(filter(str.isdigit, s['phone']))
-                        if last_9 in s_clean:
-                            return dict(s)
-    return None
+            query_sql = """
+                SELECT 
+                    s.id, s.name, s.admin_id, s.phone, s.is_active, s.subscription_until,
+                    CAST(JULIANDAY(s.subscription_until) - JULIANDAY('now') AS INTEGER) as days_left,
+                    COUNT(DISTINCT c.id) as customers_count,
+                    COALESCE(SUM(CASE WHEN c.balance > 0 THEN c.balance ELSE 0 END), 0) as total_debt
+                FROM shops s
+                LEFT JOIN customers c ON s.id = c.shop_id
+                WHERE s.name LIKE ? 
+                   OR s.phone LIKE ? 
+                   OR CAST(s.admin_id AS TEXT) LIKE ?
+                   OR CAST(s.id AS TEXT) = ?
+                GROUP BY s.id, s.name, s.admin_id, s.phone, s.is_active, s.subscription_until
+                ORDER BY s.id DESC
+                LIMIT 20
+            """
+            async with db.execute(query_sql, (clean_q, clean_q, clean_q, query.strip())) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(r) for r in rows]
+
+async def update_shop_phone(shop_id: int, new_phone: str):
+    if USE_POSTGRES:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            await conn.execute("UPDATE shops SET phone = $1 WHERE id = $2", new_phone, shop_id)
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("UPDATE shops SET phone = ? WHERE id = ?", (new_phone, shop_id))
+            await db.commit()
 
 async def transfer_shop_ownership(shop_id: int, new_admin_id: int, new_name: str = "Do'kon egasi"):
     if USE_POSTGRES:
