@@ -77,7 +77,7 @@ async def daily_backup_scheduler(bot: Bot):
             await asyncio.sleep(60)
 
 async def due_reminder_scheduler(bot: Bot):
-    """Muddati yetib kelgan qarzdorlarga avtomatik muloyim eslatma jo'natish"""
+    """Muddati yetib kelgan qarzdor va haqdorlar bo'yicha eslatma jo'natish"""
     while True:
         try:
             # Har 12 soatda bir marta tekshirish (43200 soniya)
@@ -86,14 +86,37 @@ async def due_reminder_scheduler(bot: Bot):
             for c in due_customers:
                 try:
                     due_date_str = str(c['due_date'])[:10]
-                    text = (
-                        f"⏰ <b>Hurmatli {c['full_name']}!</b>\n\n"
-                        f"<b>«{c['shop_name']}»</b> dagi kelishilgan to'lov muddati (<code>{due_date_str}</code>) yetib keldi.\n"
-                        f"💰 Joriy qarz/nasiya balansingiz: <b>{c['balance']:,.0f} so'm</b>.\n\n"
-                        f"💳 <i>Imkoningiz bo'lganda to'lovni amalga oshirishingizni so'raymiz. Rahmat!</i>\n"
-                        f"💬 <a href='tg://user?id={c['shop_admin_id']}'>Qarz beruvchi bilan bog'lanish</a>"
-                    )
-                    await bot.send_message(chat_id=c['telegram_id'], text=text, parse_mode="HTML")
+                    ledger_type = c.get('ledger_type', 'receivable')
+                    
+                    bal_uzs = c.get('balance', 0.0) or 0.0
+                    bal_usd = c.get('balance_usd', 0.0) or 0.0
+                    if bal_uzs > 0 and bal_usd > 0:
+                        bal_str = f"{bal_uzs:,.0f} so'm | {bal_usd:,.2f} $"
+                    elif bal_usd > 0:
+                        bal_str = f"{bal_usd:,.2f} $"
+                    else:
+                        bal_str = f"{bal_uzs:,.0f} so'm"
+                        
+                    if ledger_type == 'payable':
+                        # Qarz olgan odamning (admin) o'ziga eslatma boradi
+                        text = (
+                            f"⏰ <b>Qarzni qaytarish eslatmasi!</b>\n\n"
+                            f"Bugun <b>«{c['full_name']}»</b> ga qarzni qaytarish muddati (<code>{due_date_str}</code>) yetib keldi.\n"
+                            f"💰 Qaytarishingiz kerak bo'lgan summa: <b>{bal_str}</b>\n\n"
+                            f"<i>O'z vaqtida hisob-kitob qilishni unutmang!</i>"
+                        )
+                        await bot.send_message(chat_id=c['shop_admin_id'], text=text, parse_mode="HTML")
+                    else:
+                        # Qarzdorning o'ziga eslatma boradi
+                        if c.get('telegram_id'):
+                            text = (
+                                f"⏰ <b>Hurmatli {c['full_name']}!</b>\n\n"
+                                f"<b>«{c['shop_name']}»</b> dagi kelishilgan to'lov muddati (<code>{due_date_str}</code>) yetib keldi.\n"
+                                f"💰 Joriy qarz/nasiya balansingiz: <b>{bal_str}</b>.\n\n"
+                                f"💳 <i>Imkoningiz bo'lganda to'lovni amalga oshirishingizni so'raymiz. Rahmat!</i>\n"
+                                f"💬 <a href='tg://user?id={c['shop_admin_id']}'>Qarz beruvchi bilan bog'lanish</a>"
+                            )
+                            await bot.send_message(chat_id=c['telegram_id'], text=text, parse_mode="HTML")
                 except Exception:
                     pass
         except Exception as e:

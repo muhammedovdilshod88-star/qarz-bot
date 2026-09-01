@@ -195,51 +195,57 @@ def get_customer_actions_kb(customer_id: int, bot_username: str, shop_id: int, p
     customer_link = f"https://t.me/{bot_username}?start=c_{customer_id}"
     
     if ledger_type == 'payable':
-        share_text = "Assalomu alaykum! Siz bilan qarz hisob-kitoblarimizni kuzatib borishingiz uchun havola:"
-        btn_add_text = "➕ Qarz olish"
-        btn_pay_text = "➖ Qarzni to'lash"
-        btn_remind_text = "🔔 Xabar yuborish"
+        # 🔴 HAQDOR (Qarz beruvchi) UCHUN TOZA TUGMALAR
         btn_due_text = f"📅 Qaytarish muddati ({due_date_str})" if due_date_str else "📅 Qaytarish muddati"
-        btn_del_text = "🗑 Haqdor o'chirish"
-    else:
-        share_text = "Assalomu alaykum! Qarz va nasiya hisobingizni kuzatib borish uchun ushbu havolani bosing:"
-        btn_add_text = "➕ Qarz / Nasiya"
-        btn_pay_text = "➖ To'lov olish"
-        btn_remind_text = "🔔 Eslatma yuborish"
-        btn_due_text = f"📅 To'lov muddati ({due_date_str})" if due_date_str else "📅 Muddat belgilash"
-        btn_del_text = "🗑 Mijozni o'chirish"
-        
-    share_url = f"https://t.me/share/url?url={quote(customer_link)}&text={quote(share_text)}"
-    
-    rows = [
-        [
-            InlineKeyboardButton(text=btn_add_text, callback_data=f"debt_{customer_id}"),
-            InlineKeyboardButton(text=btn_pay_text, callback_data=f"pay_{customer_id}")
-        ],
-        [
-            InlineKeyboardButton(text=btn_remind_text, callback_data=f"remind_{customer_id}"),
-            InlineKeyboardButton(text=btn_due_text, callback_data=f"due_{customer_id}")
-        ],
-        [
-            InlineKeyboardButton(text="📜 Amallar tarixi", callback_data=f"history_{customer_id}"),
-            InlineKeyboardButton(text="📤 Taklif yuborish", url=share_url)
+        rows = [
+            [
+                InlineKeyboardButton(text="➕ Qarz olish", callback_data=f"debt_{customer_id}"),
+                InlineKeyboardButton(text="➖ Qarzni to'lash", callback_data=f"pay_{customer_id}")
+            ],
+            [
+                InlineKeyboardButton(text="📜 Amallar tarixi", callback_data=f"history_{customer_id}"),
+                InlineKeyboardButton(text=btn_due_text, callback_data=f"due_{customer_id}")
+            ]
         ]
-    ]
-    
-    # SMS va Telegram muloqot tugmalari
-    comm_row = [
-        InlineKeyboardButton(text="📲 SMS shabloni", callback_data=f"sms_{customer_id}")
-    ]
-    if telegram_id:
-        comm_row.append(InlineKeyboardButton(text="💬 Telegramiga yozish", url=f"tg://user?id={telegram_id}"))
+        if telegram_id:
+            rows.append([InlineKeyboardButton(text="💬 Telegramiga yozish", url=f"tg://user?id={telegram_id}")])
             
-    rows.append(comm_row)
-            
-    rows.append([
-        InlineKeyboardButton(text=btn_del_text, callback_data=f"del_cust_{customer_id}"),
-        InlineKeyboardButton(text="🔙 Orqaga", callback_data="back_to_list")
-    ])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+        rows.append([
+            InlineKeyboardButton(text="🗑 Haqdor o'chirish", callback_data=f"del_cust_{customer_id}"),
+            InlineKeyboardButton(text="🔙 Orqaga", callback_data="back_to_list")
+        ])
+        return InlineKeyboardMarkup(inline_keyboard=rows)
+    else:
+        # 🟢 QARZDOR (Mijoz) UCHUN TUGMALAR
+        share_text = "Assalomu alaykum! Qarz va nasiya hisobingizni kuzatib borish uchun ushbu havolani bosing:"
+        share_url = f"https://t.me/share/url?url={quote(customer_link)}&text={quote(share_text)}"
+        btn_due_text = f"📅 To'lov muddati ({due_date_str})" if due_date_str else "📅 Muddat belgilash"
+        
+        rows = [
+            [
+                InlineKeyboardButton(text="➕ Qarz / Nasiya", callback_data=f"debt_{customer_id}"),
+                InlineKeyboardButton(text="➖ To'lov olish", callback_data=f"pay_{customer_id}")
+            ],
+            [
+                InlineKeyboardButton(text="🔔 Eslatma yuborish", callback_data=f"remind_{customer_id}"),
+                InlineKeyboardButton(text=btn_due_text, callback_data=f"due_{customer_id}")
+            ],
+            [
+                InlineKeyboardButton(text="📜 Amallar tarixi", callback_data=f"history_{customer_id}"),
+                InlineKeyboardButton(text="📤 Taklif yuborish", url=share_url)
+            ]
+        ]
+        
+        comm_row = [InlineKeyboardButton(text="📲 SMS shabloni", callback_data=f"sms_{customer_id}")]
+        if telegram_id:
+            comm_row.append(InlineKeyboardButton(text="💬 Telegramiga yozish", url=f"tg://user?id={telegram_id}"))
+        rows.append(comm_row)
+        
+        rows.append([
+            InlineKeyboardButton(text="🗑 Mijozni o'chirish", callback_data=f"del_cust_{customer_id}"),
+            InlineKeyboardButton(text="🔙 Orqaga", callback_data="back_to_list")
+        ])
+        return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def get_customers_list_kb(customers: list, page: int = 0, per_page: int = 8) -> InlineKeyboardMarkup:
     inline_keyboard = []

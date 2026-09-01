@@ -621,13 +621,20 @@ async def start_set_due_date(call: CallbackQuery):
     customer_id = int(call.data.split("_")[1])
     customer = await db.get_customer(customer_id)
     if not customer:
-        await call.answer("Qarzdor topilmadi!", show_alert=True)
+        await call.answer("Mijoz topilmadi!", show_alert=True)
         return
         
-    text = (
-        f"📅 <b>{customer['full_name']}</b> uchun to'lov muddatini tanlang:\n\n"
-        f"<i>(Belgilangan muddat kelganda bot qarzdorga avtomatik eslatma yuboradi)</i>"
-    )
+    ledger_type = customer.get('ledger_type', 'receivable')
+    if ledger_type == 'payable':
+        text = (
+            f"📅 <b>{customer['full_name']}</b> ga qarzni qaytarish muddatini tanlang:\n\n"
+            f"💡 <i>Belgilangan muddat kelganda bot <b>sizning o'zingizga</b> eslatma yuboradi.</i>"
+        )
+    else:
+        text = (
+            f"📅 <b>{customer['full_name']}</b> uchun to'lov muddatini tanlang:\n\n"
+            f"💡 <i>Belgilangan muddat kelganda bot qarzdorga avtomatik eslatma yuboradi.</i>"
+        )
     await call.message.edit_text(text, reply_markup=get_due_date_select_kb(customer_id), parse_mode="HTML")
     await call.answer()
 
@@ -637,8 +644,16 @@ async def process_set_due_date(call: CallbackQuery, bot: Bot):
     customer_id = int(parts[1])
     days = int(parts[2])
     
+    customer = await db.get_customer(customer_id)
+    ledger_type = customer.get('ledger_type', 'receivable') if customer else 'receivable'
+    
     await db.set_customer_due_date(customer_id, days)
-    msg = "✅ To'lov muddati olib tashlandi." if days == 0 else f"✅ To'lov muddati {days} kunga belgilandi!"
+    
+    if ledger_type == 'payable':
+        msg = "✅ Qaytarish muddati olib tashlandi." if days == 0 else f"✅ Qaytarish muddati {days} kunga belgilandi. Muddat yetganda bot sizga eslatadi!"
+    else:
+        msg = "✅ To'lov muddati olib tashlandi." if days == 0 else f"✅ To'lov muddati {days} kunga belgilandi!"
+        
     await call.answer(msg, show_alert=True)
     
     # Qayta mijoz oynasiga qaytish

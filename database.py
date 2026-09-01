@@ -662,7 +662,7 @@ async def set_customer_due_date(customer_id: int, days: int):
             await db.commit()
 
 async def get_due_reminders():
-    """Bugun to'lov muddati yetib kelgan qarzdorlarni olish (Avtomatik eslatma uchun)"""
+    """Bugun to'lov muddati yetib kelgan qarzdor va haqdorlarni olish (Avtomatik eslatma uchun)"""
     if USE_POSTGRES:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
@@ -670,10 +670,10 @@ async def get_due_reminders():
                 SELECT c.*, s.name as shop_name, s.admin_id as shop_admin_id
                 FROM customers c
                 JOIN shops s ON c.shop_id = s.id
-                WHERE c.balance > 0 
+                WHERE (c.balance > 0 OR c.balance_usd > 0)
                   AND c.due_date IS NOT NULL 
                   AND c.due_date::DATE <= CURRENT_DATE
-                  AND c.telegram_id IS NOT NULL
+                  AND (c.ledger_type = 'payable' OR (COALESCE(c.ledger_type, 'receivable') = 'receivable' AND c.telegram_id IS NOT NULL))
                   AND s.is_active = 1
             """)
             return [dict(r) for r in rows]
@@ -684,10 +684,10 @@ async def get_due_reminders():
                 SELECT c.*, s.name as shop_name, s.admin_id as shop_admin_id
                 FROM customers c
                 JOIN shops s ON c.shop_id = s.id
-                WHERE c.balance > 0 
+                WHERE (c.balance > 0 OR c.balance_usd > 0)
                   AND c.due_date IS NOT NULL 
                   AND date(c.due_date) <= date('now')
-                  AND c.telegram_id IS NOT NULL
+                  AND (c.ledger_type = 'payable' OR (COALESCE(c.ledger_type, 'receivable') = 'receivable' AND c.telegram_id IS NOT NULL))
                   AND s.is_active = 1
             """) as cursor:
                 rows = await cursor.fetchall()
