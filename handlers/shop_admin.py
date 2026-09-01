@@ -405,7 +405,7 @@ async def switch_stats_period(call: CallbackQuery):
 
 # ==================== MIJOZLAR / HAQDORLAR RO'YXATI VA FILTR ====================
 
-@router.message(StateFilter('*'), F.text.func(lambda t: t and any(k in t.lower() for k in ["qarzdor", "haqdor", "qarz beruvchi", "yxati"])))
+@router.message(StateFilter('*'), F.text.func(lambda t: t and any(k in t.lower() for k in ["ro'yxat", "qarzdorlar", "haqdorlar"]) and not any(k in t.lower() for k in ["yangi", "qo'shish", "qarz olish"])))
 async def list_customers_cmd(message: Message, state: FSMContext):
     await state.clear()
     user_id = message.from_user.id
@@ -702,7 +702,7 @@ async def delete_customer_callback(call: CallbackQuery):
 
 # ==================== YANGI QARZDOR QO'SHISH ====================
 
-@router.message(StateFilter('*'), F.text.contains("Yangi") | F.text.contains("shish") | F.text.contains("Qo'shish") | F.text.contains("qo'shish"))
+@router.message(StateFilter('*'), F.text.func(lambda t: t and any(k in t.lower() for k in ["yangi qo'shish", "yangi qarz", "yangi", "qo'shish", "qarz olish"])))
 async def add_customer_start(message: Message, state: FSMContext):
     mode = get_user_ledger_mode(message.from_user.id)
     await state.set_state(AdminStates.add_customer_name)
