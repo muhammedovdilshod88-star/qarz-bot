@@ -867,69 +867,117 @@ async def get_customer_transactions(customer_id: int, limit: int = 10):
                 rows = await cursor.fetchall()
                 return [dict(r) for r in rows]
 
-async def get_shop_statistics(shop_id: int, period: str = 'all') -> dict:
+async def get_shop_statistics(shop_id: int, period: str = 'all', ledger_type: str = None) -> dict:
     period_filter_pg = {
-        'today': "AND created_at >= CURRENT_DATE",
-        'week': "AND created_at >= NOW() - INTERVAL '7 days'",
-        'month': "AND created_at >= NOW() - INTERVAL '30 days'",
+        'today': "AND t.created_at >= CURRENT_DATE",
+        'week': "AND t.created_at >= NOW() - INTERVAL '7 days'",
+        'month': "AND t.created_at >= NOW() - INTERVAL '30 days'",
         'all': ""
     }.get(period, "")
 
     period_filter_sqlite = {
-        'today': "AND created_at >= date('now')",
-        'week': "AND created_at >= datetime('now', '-7 days')",
-        'month': "AND created_at >= datetime('now', '-30 days')",
+        'today': "AND t.created_at >= date('now')",
+        'week': "AND t.created_at >= datetime('now', '-7 days')",
+        'month': "AND t.created_at >= datetime('now', '-30 days')",
         'all': ""
     }.get(period, "")
+
+    ledger_clause_pg = "AND COALESCE(c.ledger_type, 'receivable') = $2" if ledger_type else ""
+    ledger_clause_sqlite = "AND COALESCE(c.ledger_type, 'receivable') = ?" if ledger_type else ""
 
     if USE_POSTGRES:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
-            total_customers = await conn.fetchval("SELECT COUNT(*) FROM customers WHERE shop_id = $1", shop_id) or 0
-            total_active_debt = await conn.fetchval("SELECT SUM(balance) FROM customers WHERE shop_id = $1 AND balance > 0", shop_id) or 0.0
-            
-            period_debt = await conn.fetchval(f"SELECT SUM(amount) FROM transactions WHERE shop_id = $1 AND type = 'debt' {period_filter_pg}", shop_id) or 0.0
-            period_payment = await conn.fetchval(f"SELECT SUM(amount) FROM transactions WHERE shop_id = $1 AND type = 'payment' {period_filter_pg}", shop_id) or 0.0
-            total_tx_count = await conn.fetchval(f"SELECT COUNT(*) FROM transactions WHERE shop_id = $1 {period_filter_pg}", shop_id) or 0
-            
-            top_rows = await conn.fetch("""
-                SELECT full_name, balance 
-                FROM customers 
-                WHERE shop_id = $1 AND balance > 0 
-                ORDER BY balance DESC 
-                LIMIT 5
-            """, shop_id)
+            if ledger_type:
+                total_customers = await conn.fetchval(f"SELECT COUNT(*) FROM customers c WHERE c.shop_id = $1 {ledger_clause_pg}", shop_id, ledger_type) or 0
+                total_active_debt = await conn.fetchval(f"SELECT SUM(c.balance) FROM customers c WHERE c.shop_id = $1 AND c.balance > 0 {ledger_clause_pg}", shop_id, ledger_type) or 0.0
+                total_active_debt_usd = await conn.fetchval(f"SELECT SUM(c.balance_usd) FROM customers c WHERE c.shop_id = $1 AND c.balance_usd > 0 {ledger_clause_pg}", shop_id, ledger_type) or 0.0
+                
+                period_debt = await conn.fetchval(f"""
+                    SELECT SUM(t.amount) FROM transactions t 
+                    JOIN customers c ON t.customer_id = c.id 
+                    WHERE t.shop_id = $1 AND t.type = 'debt' {ledger_clause_pg} {period_filter_pg}
+                """, shop_id, ledger_type) or 0.0
+                
+                period_payment = await conn.fetchval(f"""
+                    SELECT SUM(t.amount) FROM transactions t 
+                    JOIN customers c ON t.customer_id = c.id 
+                    WHERE t.shop_id = $1 AND t.type = 'payment' {ledger_clause_pg} {period_filter_pg}
+                """, shop_id, ledger_type) or 0.0
+                
+                total_tx_count = await conn.fetchval(f"""
+                    SELECT COUNT(*) FROM transactions t 
+                    JOIN customers c ON t.customer_id = c.id 
+                    WHERE t.shop_id = $1 {ledger_clause_pg} {period_filter_pg}
+                """, shop_id, ledger_type) or 0
+                
+                top_rows = await conn.fetch(f"""
+                    SELECT c.full_name, c.balance, c.balance_usd 
+                    FROM customers c 
+                    WHERE c.shop_id = $1 AND (c.balance > 0 OR c.balance_usd > 0) {ledger_clause_pg}
+                    ORDER BY c.balance DESC, c.balance_usd DESC 
+                    LIMIT 5
+                """, shop_id, ledger_type)
+            else:
+                total_customers = await conn.fetchval("SELECT COUNT(*) FROM customers WHERE shop_id = $1", shop_id) or 0
+                total_active_debt = await conn.fetchval("SELECT SUM(balance) FROM customers WHERE shop_id = $1 AND balance > 0", shop_id) or 0.0
+                total_active_debt_usd = await conn.fetchval("SELECT SUM(balance_usd) FROM customers WHERE shop_id = $1 AND balance_usd > 0", shop_id) or 0.0
+                
+                period_debt = await conn.fetchval(f"SELECT SUM(amount) FROM transactions t WHERE t.shop_id = $1 AND t.type = 'debt' {period_filter_pg}", shop_id) or 0.0
+                period_payment = await conn.fetchval(f"SELECT SUM(amount) FROM transactions t WHERE t.shop_id = $1 AND t.type = 'payment' {period_filter_pg}", shop_id) or 0.0
+                total_tx_count = await conn.fetchval(f"SELECT COUNT(*) FROM transactions t WHERE t.shop_id = $1 {period_filter_pg}", shop_id) or 0
+                
+                top_rows = await conn.fetch("""
+                    SELECT full_name, balance, balance_usd 
+                    FROM customers 
+                    WHERE shop_id = $1 AND (balance > 0 OR balance_usd > 0) 
+                    ORDER BY balance DESC, balance_usd DESC 
+                    LIMIT 5
+                """, shop_id)
+                
             top_debtors = [dict(r) for r in top_rows]
             
             return {
                 'total_customers': total_customers,
                 'total_debt': total_active_debt,
+                'total_debt_usd': total_active_debt_usd,
                 'total_active_debt': total_active_debt,
                 'period_debt': period_debt,
                 'period_payment': period_payment,
                 'total_tx_count': total_tx_count,
                 'top_debtors': top_debtors,
-                'period': period
+                'period': period,
+                'ledger_type': ledger_type or 'receivable'
             }
     else:
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT COUNT(*) as total_customers, SUM(CASE WHEN balance > 0 THEN balance ELSE 0 END) as total_debt FROM customers WHERE shop_id = ?", (shop_id,)) as cur:
-                r1 = dict(await cur.fetchone() or {})
-            async with db.execute(f"SELECT SUM(CASE WHEN type = 'debt' THEN amount ELSE 0 END) as period_debt, SUM(CASE WHEN type = 'payment' THEN amount ELSE 0 END) as period_payment, COUNT(*) as total_tx_count FROM transactions WHERE shop_id = ? {period_filter_sqlite}", (shop_id,)) as cur:
-                r2 = dict(await cur.fetchone() or {})
-            async with db.execute("SELECT full_name, balance FROM customers WHERE shop_id = ? AND balance > 0 ORDER BY balance DESC LIMIT 5", (shop_id,)) as cur:
-                top_debtors = [dict(r) for r in await cur.fetchall()]
+            if ledger_type:
+                async with db.execute(f"SELECT COUNT(*) as total_customers, SUM(CASE WHEN balance > 0 THEN balance ELSE 0 END) as total_debt, SUM(CASE WHEN balance_usd > 0 THEN balance_usd ELSE 0 END) as total_debt_usd FROM customers c WHERE c.shop_id = ? {ledger_clause_sqlite}", (shop_id, ledger_type)) as cur:
+                    r1 = dict(await cur.fetchone() or {})
+                async with db.execute(f"SELECT SUM(CASE WHEN t.type = 'debt' THEN t.amount ELSE 0 END) as period_debt, SUM(CASE WHEN t.type = 'payment' THEN t.amount ELSE 0 END) as period_payment, COUNT(*) as total_tx_count FROM transactions t JOIN customers c ON t.customer_id = c.id WHERE t.shop_id = ? {ledger_clause_sqlite} {period_filter_sqlite}", (shop_id, ledger_type)) as cur:
+                    r2 = dict(await cur.fetchone() or {})
+                async with db.execute(f"SELECT c.full_name, c.balance, c.balance_usd FROM customers c WHERE c.shop_id = ? AND (c.balance > 0 OR c.balance_usd > 0) {ledger_clause_sqlite} ORDER BY c.balance DESC, c.balance_usd DESC LIMIT 5", (shop_id, ledger_type)) as cur:
+                    top_debtors = [dict(r) for r in await cur.fetchall()]
+            else:
+                async with db.execute("SELECT COUNT(*) as total_customers, SUM(CASE WHEN balance > 0 THEN balance ELSE 0 END) as total_debt, SUM(CASE WHEN balance_usd > 0 THEN balance_usd ELSE 0 END) as total_debt_usd FROM customers WHERE shop_id = ?", (shop_id,)) as cur:
+                    r1 = dict(await cur.fetchone() or {})
+                async with db.execute(f"SELECT SUM(CASE WHEN t.type = 'debt' THEN t.amount ELSE 0 END) as period_debt, SUM(CASE WHEN t.type = 'payment' THEN t.amount ELSE 0 END) as period_payment, COUNT(*) as total_tx_count FROM transactions t WHERE t.shop_id = ? {period_filter_sqlite}", (shop_id,)) as cur:
+                    r2 = dict(await cur.fetchone() or {})
+                async with db.execute("SELECT full_name, balance, balance_usd FROM customers WHERE shop_id = ? AND (balance > 0 OR balance_usd > 0) ORDER BY balance DESC, balance_usd DESC LIMIT 5", (shop_id,)) as cur:
+                    top_debtors = [dict(r) for r in await cur.fetchall()]
 
             return {
                 'total_customers': r1.get('total_customers') or 0,
                 'total_debt': r1.get('total_debt') or 0.0,
+                'total_debt_usd': r1.get('total_debt_usd') or 0.0,
                 'total_active_debt': r1.get('total_debt') or 0.0,
                 'period_debt': r2.get('period_debt') or 0.0,
                 'period_payment': r2.get('period_payment') or 0.0,
                 'total_tx_count': r2.get('total_tx_count') or 0,
                 'top_debtors': top_debtors,
-                'period': period
+                'period': period,
+                'ledger_type': ledger_type or 'receivable'
             }
 
 async def list_shop_customers(shop_id: int, sort_by_debt: bool = True, ledger_type: str = None):
@@ -941,19 +989,29 @@ async def list_shop_admins(shop_id: int):
 async def delete_shop_staff(staff_id: int, shop_id: int):
     return await remove_staff_member(shop_id, staff_id)
 
-async def get_detailed_shop_statistics(shop_id: int, period: str = 'all') -> dict:
-    stats = await get_shop_statistics(shop_id, period)
+async def get_detailed_shop_statistics(shop_id: int, period: str = 'all', ledger_type: str = None) -> dict:
+    stats = await get_shop_statistics(shop_id, period, ledger_type=ledger_type)
     if USE_POSTGRES:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
-            indebted = await conn.fetchval("SELECT COUNT(*) FROM customers WHERE shop_id = $1 AND balance > 0", shop_id) or 0
-            clear = await conn.fetchval("SELECT COUNT(*) FROM customers WHERE shop_id = $1 AND balance <= 0", shop_id) or 0
+            if ledger_type:
+                indebted = await conn.fetchval("SELECT COUNT(*) FROM customers WHERE shop_id = $1 AND (balance > 0 OR balance_usd > 0) AND COALESCE(ledger_type, 'receivable') = $2", shop_id, ledger_type) or 0
+                clear = await conn.fetchval("SELECT COUNT(*) FROM customers WHERE shop_id = $1 AND (balance <= 0 AND balance_usd <= 0) AND COALESCE(ledger_type, 'receivable') = $2", shop_id, ledger_type) or 0
+            else:
+                indebted = await conn.fetchval("SELECT COUNT(*) FROM customers WHERE shop_id = $1 AND (balance > 0 OR balance_usd > 0)", shop_id) or 0
+                clear = await conn.fetchval("SELECT COUNT(*) FROM customers WHERE shop_id = $1 AND (balance <= 0 AND balance_usd <= 0)", shop_id) or 0
     else:
         async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute("SELECT COUNT(*) FROM customers WHERE shop_id = ? AND balance > 0", (shop_id,)) as cur:
-                indebted = (await cur.fetchone())[0]
-            async with db.execute("SELECT COUNT(*) FROM customers WHERE shop_id = ? AND balance <= 0", (shop_id,)) as cur:
-                clear = (await cur.fetchone())[0]
+            if ledger_type:
+                async with db.execute("SELECT COUNT(*) FROM customers WHERE shop_id = ? AND (balance > 0 OR balance_usd > 0) AND COALESCE(ledger_type, 'receivable') = ?", (shop_id, ledger_type)) as cur:
+                    indebted = (await cur.fetchone())[0]
+                async with db.execute("SELECT COUNT(*) FROM customers WHERE shop_id = ? AND (balance <= 0 AND balance_usd <= 0) AND COALESCE(ledger_type, 'receivable') = ?", (shop_id, ledger_type)) as cur:
+                    clear = (await cur.fetchone())[0]
+            else:
+                async with db.execute("SELECT COUNT(*) FROM customers WHERE shop_id = ? AND (balance > 0 OR balance_usd > 0)", (shop_id,)) as cur:
+                    indebted = (await cur.fetchone())[0]
+                async with db.execute("SELECT COUNT(*) FROM customers WHERE shop_id = ? AND (balance <= 0 AND balance_usd <= 0)", (shop_id,)) as cur:
+                    clear = (await cur.fetchone())[0]
                 
     stats['indebted_customers'] = indebted
     stats['clear_customers'] = clear

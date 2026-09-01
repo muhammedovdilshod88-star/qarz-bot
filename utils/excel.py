@@ -16,18 +16,20 @@ def apply_row_style(cell, value, align="left", is_money=False):
     if is_money and isinstance(value, (int, float)):
         cell.number_format = '#,##0 "so''m"'
 
-async def generate_shop_excel(shop_id: int) -> io.BytesIO:
+async def generate_shop_excel(shop_id: int, ledger_type: str = 'receivable') -> io.BytesIO:
     """Bitta do'kon uchun alohida to'liq Excel hisoboti (So'm va Dollar)"""
     shop = await db.get_shop_by_id(shop_id)
-    customers = await db.get_customers_by_shop(shop_id)
+    customers = await db.get_customers_by_shop(shop_id, ledger_type=ledger_type)
     
     wb = openpyxl.Workbook()
+    is_payable = (ledger_type == 'payable')
     
-    # 1-Varaq: Mijozlar va Qarzlar
+    # 1-Varaq: Shaxslar va Qarzlar
     ws_cust = wb.active
-    ws_cust.title = "Mijozlar va Qarzlar"
+    ws_cust.title = "Haqdorlar va Qarzlar" if is_payable else "Qarzdorlar va Qarzlar"
     
-    headers = ["№", "Mijoz Ismi", "Telefon Raqami", "So'm Qarzi", "Dollar Qarzi ($)", "Telegram Ulangan"]
+    person_header = "Haqdor (Qarz beruvchi)" if is_payable else "Qarzdor / Mijoz Ismi"
+    headers = ["№", person_header, "Telefon Raqami", "So'm Qarzi", "Dollar Qarzi ($)", "Telegram Ulangan"]
     for col_idx, h in enumerate(headers, 1):
         apply_header_style(ws_cust.cell(row=1, column=col_idx), h, bg_color="2563EB")
         

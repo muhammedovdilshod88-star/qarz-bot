@@ -260,27 +260,35 @@ async def show_add_to_homescreen_guide(message: Message):
 @router.message(StateFilter('*'), F.text.func(lambda t: t and any(k in t.lower() for k in ["excel", "hisobot"])))
 async def send_shop_excel_report(message: Message, bot: Bot, state: FSMContext):
     await state.clear()
-    shop = await db.get_shop_by_admin(message.from_user.id)
+    user_id = message.from_user.id
+    shop = await db.get_shop_by_admin(user_id)
     if not shop:
         return
         
-    await message.answer("⏳ <i>Hisobotingiz Excel formatida tayyorlanmoqda...</i>", parse_mode="HTML")
+    mode = get_user_ledger_mode(user_id)
+    is_payable = (mode == 'payable')
+    report_target = "Mening qarzlarim (Haqdorlar)" if is_payable else "Menga qarzlar (Qarzdorlar)"
+    await message.answer(f"⏳ <i>«{report_target}» bo'yicha Excel hisoboti tayyorlanmoqda...</i>", parse_mode="HTML")
     
     try:
         from utils.excel import generate_shop_excel
         from aiogram.types import BufferedInputFile
         from datetime import datetime
         
-        bio = await generate_shop_excel(shop['id'])
+        bio = await generate_shop_excel(shop['id'], ledger_type=mode)
         date_str = datetime.now().strftime("%Y-%m-%d")
-        filename = f"{shop['name']}_Hisobot_{date_str}.xlsx"
+        file_prefix = "Mening_qarzlarim_Haqdorlar" if is_payable else "Menga_qarzlar_Qarzdorlar"
+        filename = f"{file_prefix}_{date_str}.xlsx"
         doc = BufferedInputFile(bio.getvalue(), filename=filename)
         
+        sheet1_name = "Haqdorlar va Qarzlar" if is_payable else "Qarzdorlar va Qarzlar"
+        sheet1_desc = "Siz qarz olgan barcha haqdorlar va to'lashingiz kerak bo'lgan qarzlar" if is_payable else "Barcha qarzdorlaringiz va ularning qarz qoldiqlari"
+        
         caption = (
-            f"📊 <b>«{shop['name']}» — To'liq Excel hisoboti</b>\n\n"
+            f"📊 <b>«{shop['name']}» — {report_target} Excel hisoboti</b>\n\n"
             f"📅 Sana: <code>{date_str}</code>\n"
             f"📑 <b>Varaqlar:</b>\n"
-            f"1️⃣ <b>Qarzdorlar va Qarzlar:</b> Barcha qarzdorlaringiz va ularning qarz qoldiqlari\n"
+            f"1️⃣ <b>{sheet1_name}:</b> {sheet1_desc}\n"
             f"2️⃣ <b>Amallar Tarixi:</b> Barcha amallar va to'lovlar tarixi\n\n"
             f"<i>(Kompyuter yoki telefonda Excel dasturida ochib ko'rishingiz mumkin)</i>"
         )
@@ -352,28 +360,64 @@ def build_stats_message(shop_name: str, stats: dict) -> str:
         'all': '📊 Barcha vaqt bo‘yicha umumiy hisobot'
     }
     period_title = period_names.get(stats['period'], '📊 Hisobot')
+    ledger_type = stats.get('ledger_type', 'receivable')
+    is_payable = (ledger_type == 'payable')
     
     top_text = ""
     if stats['top_debtors']:
-        top_text = "\n🏆 <b>Eng katta qarzdorlar (TOP):</b>\n"
+        top_title = "🏆 <b>Eng katta haqdorlar (TOP):</b>\n" if is_payable else "🏆 <b>Eng katta qarzdorlar (TOP):</b>\n"
+        top_text = f"\n{top_title}"
         for i, d in enumerate(stats['top_debtors'], 1):
-            top_text += f"{i}. 👤 {d['full_name']} — <b>{format_money(d['balance'])}</b>\n"
+            d_bal_uzs = d.get('balance', 0.0) or 0.0
+            d_bal_usd = d.get('balance_usd', 0.0) or 0.0
+            if d_bal_uzs > 0 and d_bal_usd > 0:
+                d_str = f"{format_money(d_bal_uzs, 'UZS')} | {format_money(d_bal_usd, 'USD')}"
+            elif d_bal_usd > 0:
+                d_str = format_money(d_bal_usd, 'USD')
+            else:
+                d_str = format_money(d_bal_uzs, 'UZS')
+            top_text += f"{i}. 👤 {d['full_name']} — <b>{d_str}</b>\n"
     else:
-        top_text = "\n<i>(Hozircha hech kimda faol qarz yo'q)</i>\n"
+        empty_msg = "(Hozircha hech kimga qarz mavjud emas)" if is_payable else "(Hozircha hech kimda faol qarz yo'q)"
+        top_text = f"\n<i>{empty_msg}</i>\n"
+
+    tot_uzs = stats.get('total_debt', 0.0) or 0.0
+    tot_usd = stats.get('total_debt_usd', 0.0) or 0.0
+    if tot_uzs > 0 and tot_usd > 0:
+        tot_summary = f"{format_money(tot_uzs, 'UZS')} | {format_money(tot_usd, 'USD')}"
+    elif tot_usd > 0:
+        tot_summary = format_money(tot_usd, 'USD')
+    else:
+        tot_summary = format_money(tot_uzs, 'UZS')
+
+    if is_payable:
+        header = f"🔴 <b>{shop_name} — Mening qarzlarim (Berishim kerak) statistikasi</b>"
+        active_label = "🔴 <b>Berishim kerak bo'lgan jami qarz:</b>"
+        tx_debt_label = "➕ Olingan yangi qarz"
+        tx_pay_label = "➖ Qaytarilgan to'lov"
+        person_group = "Haqdorlar (Qarz beruvchilar)"
+        active_person_label = "Hali to'lanmagan haqdorlar"
+    else:
+        header = f"🟢 <b>{shop_name} — Menga qarzlar (Olishim kerak) statistikasi</b>"
+        active_label = "🟢 <b>Olishim kerak bo'lgan jami qarz:</b>"
+        tx_debt_label = "➕ Berilgan yangi qarz"
+        tx_pay_label = "➖ Undirilgan to'lov"
+        person_group = "Mijozlar / Qarzdorlar"
+        active_person_label = "Qarzda turganlar"
 
     return (
-        f"🏪 <b>{shop_name} — Moliya va Nasiya Statistikasi</b>\n"
+        f"{header}\n"
         f"<b>{period_title}</b>\n"
         f"────────────────────\n"
-        f"💰 <b>Joriy faol nasiyalar (Do'kon haqi):</b> <b>{format_money(stats['total_active_debt'])}</b>\n\n"
+        f"{active_label} <b>{tot_summary}</b>\n\n"
         f"📈 <b>Tanlangan davr bo'yicha:</b>\n"
-        f"➕ Berilgan yangi qarz: <b>+{format_money(stats['period_debt'])}</b>\n"
-        f"➖ Undirilgan to'lov: <b>-{format_money(stats['period_payment'])}</b>\n"
-        f"🔄 Operatsiyalar soni: <b>{stats['total_tx_count']} ta</b>\n\n"
-        f"👥 <b>Mijozlar holati:</b>\n"
-        f"• Jami mijozlar: <b>{stats['total_customers']} nafar</b>\n"
-        f"• ⚠️ Qarzda turganlar: <b>{stats['indebted_customers']} nafar</b>\n"
-        f"• ✅ Qarzi yo'qlar: <b>{stats['clear_customers']} nafar</b>\n"
+        f"• {tx_debt_label}: <b>+{format_money(stats['period_debt'])}</b>\n"
+        f"• {tx_pay_label}: <b>-{format_money(stats['period_payment'])}</b>\n"
+        f"• 🔄 Operatsiyalar soni: <b>{stats['total_tx_count']} ta</b>\n\n"
+        f"👥 <b>{person_group} holati:</b>\n"
+        f"• Jami: <b>{stats['total_customers']} nafar</b>\n"
+        f"• ⚠️ {active_person_label}: <b>{stats['indebted_customers']} nafar</b>\n"
+        f"• ✅ Qarzi uzilganlar: <b>{stats['clear_customers']} nafar</b>\n"
         f"{top_text}\n"
         f"👇 <i>Boshqa davrni ko'rish uchun quyidagi tugmalarni bosing:</i>"
     )
@@ -381,11 +425,13 @@ def build_stats_message(shop_name: str, stats: dict) -> str:
 @router.message(StateFilter('*'), F.text.func(lambda t: t and "statistika" in t.lower()))
 async def show_shop_statistics(message: Message, state: FSMContext):
     await state.clear()
-    shop = await db.get_shop_by_admin(message.from_user.id)
+    user_id = message.from_user.id
+    shop = await db.get_shop_by_admin(user_id)
     if not shop:
         return
     
-    stats = await db.get_detailed_shop_statistics(shop['id'], period='all')
+    mode = get_user_ledger_mode(user_id)
+    stats = await db.get_detailed_shop_statistics(shop['id'], period='all', ledger_type=mode)
     text = build_stats_message(shop['name'], stats)
     kb = get_stats_period_kb(current_period='all')
     await message.answer(text, reply_markup=kb, parse_mode="HTML")
@@ -393,12 +439,14 @@ async def show_shop_statistics(message: Message, state: FSMContext):
 @router.callback_query(F.data.startswith("stat_"))
 async def switch_stats_period(call: CallbackQuery):
     period = call.data.replace("stat_", "")
-    shop = await db.get_shop_by_admin(call.from_user.id)
+    user_id = call.from_user.id
+    shop = await db.get_shop_by_admin(user_id)
     if not shop:
         await call.answer()
         return
         
-    stats = await db.get_detailed_shop_statistics(shop['id'], period=period)
+    mode = get_user_ledger_mode(user_id)
+    stats = await db.get_detailed_shop_statistics(shop['id'], period=period, ledger_type=mode)
     text = build_stats_message(shop['name'], stats)
     kb = get_stats_period_kb(current_period=period)
     

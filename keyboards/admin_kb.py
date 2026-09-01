@@ -27,30 +27,37 @@ def get_currency_select_kb(action: str, customer_id: int) -> InlineKeyboardMarku
 
 def get_admin_main_kb(is_superadmin: bool = False, days_left: int = 30, ledger_type: str = 'receivable') -> ReplyKeyboardMarkup:
     if ledger_type == 'payable':
-        # 🔴 MENING QARZLARIM REJIMI (Men berishim kerak bo'lgan qarzlar)
+        # 🔴 MENING QARZLARIM REJIMI (Men berishim kerak bo'lgan qarzlar - Shaxsiy)
         tabs_row = [
             KeyboardButton(text="🟢 Olishim kerak 🔄"),
             KeyboardButton(text="🔴 BERISHIM KERAK (Faol ✅)")
         ]
         list_btn = KeyboardButton(text="📋 Haqdorlar (Qarz beruvchilar)")
         add_btn = KeyboardButton(text="➕ Yangi qarz olish")
+        buttons = [
+            tabs_row,
+            [list_btn, add_btn],
+            [KeyboardButton(text="🔍 Qidirish"), KeyboardButton(text="📊 Statistika")],
+            [KeyboardButton(text="📥 Excel hisoboti"), KeyboardButton(text="⚙️ Daftar nomi")],
+            [KeyboardButton(text=f"⏳ Obuna: {days_left} kun qoldi"), KeyboardButton(text="📲 Ekranga znachok")],
+        ]
     else:
-        # 🟢 MENGA QARZLAR REJIMI (Menga qaytarishi kerak bo'lgan qarzlar)
+        # 🟢 MENGA QARZLAR REJIMI (Menga qaytarishi kerak bo'lgan qarzlar - Do'kon/Daftar)
         tabs_row = [
             KeyboardButton(text="🟢 MENGA QARZLAR (Faol ✅)"),
             KeyboardButton(text="🔴 Berishim kerak 🔄")
         ]
         list_btn = KeyboardButton(text="📋 Qarzdorlar ro'yxati")
         add_btn = KeyboardButton(text="➕ Yangi qo'shish")
+        buttons = [
+            tabs_row,
+            [list_btn, add_btn],
+            [KeyboardButton(text="🔍 Qidirish"), KeyboardButton(text="📊 Statistika")],
+            [KeyboardButton(text="📥 Excel hisoboti"), KeyboardButton(text="📲 Ulanish QR kodi")],
+            [KeyboardButton(text="👥 Sheriklar (Adminlar)"), KeyboardButton(text="⚙️ Daftar nomi")],
+            [KeyboardButton(text=f"⏳ Obuna: {days_left} kun qoldi"), KeyboardButton(text="📲 Ekranga znachok")],
+        ]
         
-    buttons = [
-        tabs_row,
-        [list_btn, add_btn],
-        [KeyboardButton(text="🔍 Qidirish"), KeyboardButton(text="📊 Statistika")],
-        [KeyboardButton(text="📥 Excel hisoboti"), KeyboardButton(text="📲 Ulanish QR kodi")],
-        [KeyboardButton(text="👥 Sheriklar (Adminlar)"), KeyboardButton(text="⚙️ Daftar nomi")],
-        [KeyboardButton(text=f"⏳ Obuna: {days_left} kun qoldi"), KeyboardButton(text="📲 Ekranga znachok")],
-    ]
     if is_superadmin:
         buttons.append([KeyboardButton(text="👑 Super Admin Paneli")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
