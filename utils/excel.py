@@ -90,16 +90,16 @@ async def generate_shop_excel(shop_id: int, ledger_type: str = 'receivable') -> 
     return bio
 
 async def generate_full_platform_excel() -> io.BytesIO:
-    """Super Admin uchun butun platformaning to'liq zaxira Excel fayli"""
+    """Super Admin uchun butun platformaning to'liq zaxira Excel fayli (Do'konlar, Qarzdor/Haqdorlar, Amallar tarixi)"""
     shops = await db.get_detailed_shops_analysis()
     
     wb = openpyxl.Workbook()
     
-    # 1-Varaq: Barcha Do'konlar
+    # 1-Varaq: Barcha Do'konlar va Daftarlar
     ws_shops = wb.active
     ws_shops.title = "Do'konlar Ro'yxati"
     
-    headers = ["ID", "Do'kon Nomi", "Admin Telegram ID", "Telefon", "Mijozlar", "Savdolar", "Jami Qarz", "Holat", "Obuna Qolgan Kun"]
+    headers = ["ID", "Do'kon Nomi", "Admin Telegram ID", "Telefon", "Mijozlar Soni", "Holat", "Obuna Qolgan Kun"]
     for col_idx, h in enumerate(headers, 1):
         apply_header_style(ws_shops.cell(row=1, column=col_idx), h, bg_color="1E3A8A")
         
@@ -110,18 +110,16 @@ async def generate_full_platform_excel() -> io.BytesIO:
         apply_row_style(ws_shops.cell(row=row_idx, column=3), s['admin_id'], align="center")
         apply_row_style(ws_shops.cell(row=row_idx, column=4), s['phone'] or "-", align="center")
         apply_row_style(ws_shops.cell(row=row_idx, column=5), s.get('customers_count', 0), align="center")
-        apply_row_style(ws_shops.cell(row=row_idx, column=6), s.get('transactions_count', 0), align="center")
-        apply_row_style(ws_shops.cell(row=row_idx, column=7), s.get('total_debt', 0.0), align="right", is_money=True)
-        apply_row_style(ws_shops.cell(row=row_idx, column=8), status, align="center")
-        apply_row_style(ws_shops.cell(row=row_idx, column=9), s.get('days_left', 30), align="center")
+        apply_row_style(ws_shops.cell(row=row_idx, column=6), status, align="center")
+        apply_row_style(ws_shops.cell(row=row_idx, column=7), s.get('days_left', 30), align="center")
         
     for col in ws_shops.columns:
         max_len = max(len(str(cell.value or '')) for cell in col)
         ws_shops.column_dimensions[col[0].column_letter].width = max(max_len + 4, 12)
         
-    # 2-Varaq: Barcha Mijozlar
-    ws_all_cust = wb.create_sheet(title="Barcha Mijozlar")
-    cust_headers = ["ID", "Do'kon Nomi", "Mijoz Ismi", "Telefon", "Qarz Balansi"]
+    # 2-Varaq: Barcha Qarzdorlar va Haqdorlar
+    ws_all_cust = wb.create_sheet(title="Qarzdorlar va Haqdorlar")
+    cust_headers = ["ID", "Do'kon Nomi", "Shaxs Ismi", "Turi", "Telefon", "So'm Qarzi", "Dollar Qarzi ($)", "Muddat Sanasi", "Telegram ID"]
     for col_idx, h in enumerate(cust_headers, 1):
         apply_header_style(ws_all_cust.cell(row=1, column=col_idx), h, bg_color="4338CA")
         
@@ -129,16 +127,65 @@ async def generate_full_platform_excel() -> io.BytesIO:
     for s in shops:
         c_list = await db.get_customers_by_shop(s['id'])
         for c in c_list:
+            l_type = "🔴 Haqdor (Berishim kerak)" if c.get('ledger_type') == 'payable' else "🟢 Qarzdor (Olishim kerak)"
+            due_str = str(c.get('due_date'))[:10] if c.get('due_date') else "-"
+            u_bal = c.get('balance', 0.0) or 0.0
+            d_bal = c.get('balance_usd', 0.0) or 0.0
+            
             apply_row_style(ws_all_cust.cell(row=c_row, column=1), c['id'], align="center")
             apply_row_style(ws_all_cust.cell(row=c_row, column=2), s['name'])
             apply_row_style(ws_all_cust.cell(row=c_row, column=3), c['full_name'])
-            apply_row_style(ws_all_cust.cell(row=c_row, column=4), c['phone'] or "-", align="center")
-            apply_row_style(ws_all_cust.cell(row=c_row, column=5), c['balance'], align="right", is_money=True)
+            apply_row_style(ws_all_cust.cell(row=c_row, column=4), l_type, align="center")
+            apply_row_style(ws_all_cust.cell(row=c_row, column=5), c['phone'] or "-", align="center")
+            apply_row_style(ws_all_cust.cell(row=c_row, column=6), u_bal, align="right", is_money=True)
+            
+            d_cell = ws_all_cust.cell(row=c_row, column=7)
+            d_cell.value = d_bal
+            d_cell.font = Font(name="Arial", size=10)
+            d_cell.alignment = Alignment(horizontal="right", vertical="center")
+            d_cell.number_format = '#,##0.00'
+            
+            apply_row_style(ws_all_cust.cell(row=c_row, column=8), due_str, align="center")
+            apply_row_style(ws_all_cust.cell(row=c_row, column=9), c.get('telegram_id') or "-", align="center")
             c_row += 1
             
     for col in ws_all_cust.columns:
         max_len = max(len(str(cell.value or '')) for cell in col)
-        ws_all_cust.column_dimensions[col[0].column_letter].width = max(max_len + 4, 12)
+        ws_all_cust.column_dimensions[col[0].column_letter].width = max(max_len + 4, 14)
+
+    # 3-Varaq: Barcha Amallar va Tranzaksiyalar Tarixi
+    ws_tx = wb.create_sheet(title="Amallar Tarixi")
+    tx_headers = ["ID", "Sana", "Do'kon Nomi", "Shaxs Ismi", "Amal Turi", "Summa", "Valyuta", "Izoh"]
+    for col_idx, h in enumerate(tx_headers, 1):
+        apply_header_style(ws_tx.cell(row=1, column=col_idx), h, bg_color="059669")
+        
+    t_row = 2
+    for s in shops:
+        txs = await db.get_shop_transactions(s['id'], limit=500)
+        for t in txs:
+            t_type = "Qarz Qo'shildi" if t['type'] == 'debt' else "To'lov Qilindi"
+            curr = t.get('currency', 'UZS') or 'UZS'
+            date_str = str(t.get('created_at', ''))[:19]
+            
+            apply_row_style(ws_tx.cell(row=t_row, column=1), t['id'], align="center")
+            apply_row_style(ws_tx.cell(row=t_row, column=2), date_str, align="center")
+            apply_row_style(ws_tx.cell(row=t_row, column=3), s['name'])
+            apply_row_style(ws_tx.cell(row=t_row, column=4), t.get('customer_name', '-'))
+            apply_row_style(ws_tx.cell(row=t_row, column=5), t_type, align="center")
+            
+            s_cell = ws_tx.cell(row=t_row, column=6)
+            s_cell.value = t['amount']
+            s_cell.font = Font(name="Arial", size=10)
+            s_cell.alignment = Alignment(horizontal="right", vertical="center")
+            s_cell.number_format = '#,##0.00' if curr == 'USD' else '#,##0'
+            
+            apply_row_style(ws_tx.cell(row=t_row, column=7), curr, align="center")
+            apply_row_style(ws_tx.cell(row=t_row, column=8), t.get('description') or "-")
+            t_row += 1
+            
+    for col in ws_tx.columns:
+        max_len = max(len(str(cell.value or '')) for cell in col)
+        ws_tx.column_dimensions[col[0].column_letter].width = max(max_len + 4, 14)
 
     bio = io.BytesIO()
     wb.save(bio)
