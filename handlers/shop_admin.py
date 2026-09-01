@@ -890,7 +890,22 @@ async def delete_customer_callback(call: CallbackQuery):
 
 @router.message(StateFilter('*'), F.text.func(lambda t: t and any(k in t.lower() for k in ["yangi qo'shish", "yangi qarz", "yangi", "qo'shish", "qarz olish"])))
 async def add_customer_start(message: Message, state: FSMContext):
-    mode = get_user_ledger_mode(message.from_user.id)
+    user_id = message.from_user.id
+    shop = await db.get_shop_by_admin(user_id)
+    if shop:
+        is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
+        is_sa = user_id in config.SUPER_ADMIN_IDS
+        if not is_sa and not is_valid:
+            await message.answer(
+                f"🔒 <b>«{shop['name']}» — Obuna muddati tugagan!</b>\n\n"
+                f"Yangi qarz yoki mijoz qo'shish uchun iltimos, bot obunasini uzaytiring.\n\n"
+                f"💳 <i>Mavjud barcha qarzlaringiz va hisobotlaringiz xavfsiz saqlanmoqda.</i>",
+                parse_mode="HTML",
+                reply_markup=get_subscription_kb()
+            )
+            return
+            
+    mode = get_user_ledger_mode(user_id)
     await state.set_state(AdminStates.add_customer_name)
     await state.update_data(ledger_type=mode)
     
@@ -903,7 +918,22 @@ async def add_customer_start(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == "manual_add_cust")
 async def start_manual_customer_add(call: CallbackQuery, state: FSMContext):
-    mode = get_user_ledger_mode(call.from_user.id)
+    user_id = call.from_user.id
+    shop = await db.get_shop_by_admin(user_id)
+    if shop:
+        is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
+        is_sa = user_id in config.SUPER_ADMIN_IDS
+        if not is_sa and not is_valid:
+            await call.answer("🔒 Obuna muddati tugagan!", show_alert=True)
+            await call.message.answer(
+                f"🔒 <b>«{shop['name']}» — Obuna muddati tugagan!</b>\n\n"
+                f"Yangi qarz yoki mijoz qo'shish uchun iltimos, bot obunasini uzaytiring.",
+                parse_mode="HTML",
+                reply_markup=get_subscription_kb()
+            )
+            return
+            
+    mode = get_user_ledger_mode(user_id)
     await state.set_state(AdminStates.add_customer_name)
     await state.update_data(ledger_type=mode)
     
@@ -1010,6 +1040,20 @@ async def start_add_debt(call: CallbackQuery, state: FSMContext):
     if not customer:
         await call.answer("Mijoz topilmadi!", show_alert=True)
         return
+        
+    shop = await db.get_shop_by_id(customer['shop_id'])
+    if shop:
+        is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
+        is_sa = call.from_user.id in config.SUPER_ADMIN_IDS
+        if not is_sa and not is_valid:
+            await call.answer("🔒 Obuna muddati tugagan! Qarz qo'shish uchun obunani uzaytiring.", show_alert=True)
+            await call.message.answer(
+                f"🔒 <b>«{shop['name']}» — Obuna muddati tugagan!</b>\n\n"
+                f"Qarz yozish uchun iltimos, bot obunasini uzaytiring.",
+                parse_mode="HTML",
+                reply_markup=get_subscription_kb()
+            )
+            return
     
     await state.clear()
     await call.message.edit_text(
