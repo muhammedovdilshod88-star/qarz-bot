@@ -534,6 +534,35 @@ async def get_detailed_shops_analysis():
                 GROUP BY s.id, s.name, s.admin_id, s.phone, s.is_active, s.subscription_until
                 ORDER BY customers_count DESC, transactions_count DESC, s.id DESC
             """
+async def get_expiring_shops():
+    """Obunasi tugashiga 3 kun, 1 kun qolgan yoki tugagan do'konlarni olish (Avtomatik billing eslatmasi uchun)"""
+    if USE_POSTGRES:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT 
+                    s.id, s.name, s.admin_id, s.phone, s.subscription_until,
+                    EXTRACT(DAY FROM (s.subscription_until - NOW()))::INT as days_left
+                FROM shops s
+                WHERE s.is_active = 1
+                  AND (
+                      EXTRACT(DAY FROM (s.subscription_until - NOW()))::INT IN (3, 1, 0, -1)
+                  )
+            """)
+            return [dict(r) for r in rows]
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            query = """
+                SELECT 
+                    s.id, s.name, s.admin_id, s.phone, s.subscription_until,
+                    CAST(JULIANDAY(s.subscription_until) - JULIANDAY('now') AS INTEGER) as days_left
+                FROM shops s
+                WHERE s.is_active = 1
+                  AND (
+                      CAST(JULIANDAY(s.subscription_until) - JULIANDAY('now') AS INTEGER) IN (3, 1, 0, -1)
+                  )
+            """
             async with db.execute(query) as cursor:
                 rows = await cursor.fetchall()
                 return [dict(r) for r in rows]

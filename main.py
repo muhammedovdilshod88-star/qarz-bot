@@ -123,6 +123,65 @@ async def due_reminder_scheduler(bot: Bot):
             logger.error(f"Due reminder scheduler xatosi: {e}")
             await asyncio.sleep(60)
 
+async def shop_subscription_reminder_scheduler(bot: Bot):
+    """Faqat faol daftarlar (Shop Adminlar) uchun oylik to'lov/obuna muddati eslatmasi (Passiv mijozlarga bormaydi)"""
+    from keyboards.admin_kb import get_subscription_kb
+    last_notified_date = None
+    while True:
+        try:
+            now_tashkent = datetime.now(TASHKENT_TZ)
+            today_str = now_tashkent.strftime("%Y-%m-%d")
+            
+            # Har kuni soat 11:00 da (Toshkent vaqti) bir marta tekshiradi
+            if now_tashkent.hour == 11 and last_notified_date != today_str:
+                expiring_shops = await db.get_expiring_shops()
+                for s in expiring_shops:
+                    admin_id = s.get('admin_id')
+                    # Super Adminga obuna eslatmasi yuborilmaydi
+                    if not admin_id or admin_id in config.SUPER_ADMIN_IDS:
+                        continue
+                        
+                    days_left = s.get('days_left', 0)
+                    shop_name = s.get('name', "Qarz Daftari")
+                    date_str = str(s.get('subscription_until', ''))[:10]
+                    
+                    if days_left == 3:
+                        msg = (
+                            f"⏳ <b>«{shop_name}» — Obuna tugashiga 3 kun qoldi!</b>\n\n"
+                            f"📅 Amal qilish sanasi: <code>{date_str}</code> gacha.\n"
+                            f"Qarz daftaringiz uzluksiz va xavfsiz ishlashda davom etishi uchun obunani uzaytirishni unutmang."
+                        )
+                    elif days_left == 1:
+                        msg = (
+                            f"⚠️ <b>«{shop_name}» — Ertaga obuna muddati tugaydi!</b>\n\n"
+                            f"📅 Amal qilish sanasi: <code>{date_str}</code> gacha.\n"
+                            f"Daftaringiz to'xtab qolmasligi uchun to'lovni amalga oshirishingizni so'raymiz."
+                        )
+                    else:
+                        msg = (
+                            f"🔴 <b>«{shop_name}» — Obuna muddati tugadi!</b>\n\n"
+                            f"📅 Amal qilish sanasi: <code>{date_str}</code> da tugagan.\n"
+                            f"Qarz daftaringizdan to'liq foydalanishda davom etish uchun pastdagi tugma orqali obunani uzaytiring."
+                        )
+                        
+                    try:
+                        await bot.send_message(
+                            chat_id=admin_id,
+                            text=msg,
+                            parse_mode="HTML",
+                            reply_markup=get_subscription_kb()
+                        )
+                    except Exception:
+                        pass
+                        
+                last_notified_date = today_str
+                logger.info(f"Do'konlar obuna eslatmasi yuborildi: {today_str}")
+
+            await asyncio.sleep(60)
+        except Exception as e:
+            logger.error(f"Shop subscription scheduler xatosi: {e}")
+            await asyncio.sleep(60)
+
 import aiohttp
 
 async def keep_alive_pinger():
@@ -168,9 +227,10 @@ async def main():
     dp.include_router(shop_admin.router)
     dp.include_router(client.router)
 
-    # Avtomatik kunlik backup, muddat eslatmalari va Keep-Alive uyg'otuvchi vazifalarni fonda yoqish
+    # Avtomatik kunlik backup, muddat eslatmalari, do'kon obunalari va Keep-Alive uyg'otuvchi vazifalarni fonda yoqish
     asyncio.create_task(daily_backup_scheduler(bot))
     asyncio.create_task(due_reminder_scheduler(bot))
+    asyncio.create_task(shop_subscription_reminder_scheduler(bot))
     asyncio.create_task(keep_alive_pinger())
 
     # Global xatoliklar ushlovchisi (Error Handler)
