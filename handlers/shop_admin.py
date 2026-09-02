@@ -35,16 +35,38 @@ def set_user_ledger_mode(user_id: int, mode: str):
     USER_LEDGER_MODES[user_id] = mode
 
 @router.message(StateFilter('*'), F.text.in_(["❌ Bekor qilish", "/cancel"]))
-async def cancel_action(message: Message, state: FSMContext):
+async def cancel_action(message: Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    customer_id = data.get('customer_id')
     await state.clear()
-    shop = await db.get_shop_by_admin(message.from_user.id)
-    if shop:
-        is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
-        is_sa = message.from_user.id in config.SUPER_ADMIN_IDS
-        mode = get_user_ledger_mode(message.from_user.id)
-        await message.answer("Amal bekor qilindi.", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=mode))
-    else:
+    
+    user_id = message.from_user.id
+    shop = await db.get_shop_by_admin(user_id)
+    if not shop:
         await message.answer("Amal bekor qilindi.")
+        return
+        
+    mode = get_user_ledger_mode(user_id)
+    is_sa = user_id in config.SUPER_ADMIN_IDS
+    is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
+    
+    # 1. Agar bitta mijozning ichida bo'lsa -> o'sha mijozning sahifasiga qaytadi
+    if customer_id:
+        cust = await db.get_customer(customer_id)
+        if cust:
+            await message.answer("Amal bekor qilindi.", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=mode))
+            await render_customer_card(message, customer_id, bot, user_id=user_id)
+            return
+
+    # 2. Agar mijoz ichida bo'lmasa -> Qarzdorlar / Haqdorlar ro'yxatiga qaytadi
+    customers = await db.list_shop_customers(shop['id'], sort_by_debt=True, ledger_type=mode)
+    title = "📋 <b>Haqdorlar (Qarz beruvchilar) ro'yxati:</b>" if mode == 'payable' else "📋 <b>Qarzdorlar ro'yxati:</b>"
+    if customers:
+        kb = get_customers_list_kb(customers, page=0)
+        await message.answer("Amal bekor qilindi.", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=mode))
+        await message.answer(f"{title}\nKerakli shaxsni tanlang:", reply_markup=kb, parse_mode="HTML")
+    else:
+        await message.answer("Amal bekor qilindi.", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=mode))
 
 # ==================== IKKI TOMONLAMA REJIMNI ALMASHTIRISH (SWITCH LEDGER TABS) ====================
 
