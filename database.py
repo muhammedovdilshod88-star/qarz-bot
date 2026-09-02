@@ -111,9 +111,11 @@ async def init_db():
                     full_name TEXT,
                     username TEXT,
                     phone TEXT,
+                    ledger_mode VARCHAR(20) DEFAULT 'receivable',
                     created_at TIMESTAMP DEFAULT NOW()
                 )
             """)
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS ledger_mode VARCHAR(20) DEFAULT 'receivable'")
         logger.info("PostgreSQL Database muvaffaqiyatli initsializatsiya qilindi!")
     else:
         # Fallback: SQLite
@@ -124,9 +126,14 @@ async def init_db():
                     full_name TEXT,
                     username TEXT,
                     phone TEXT,
+                    ledger_mode TEXT DEFAULT 'receivable',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            try:
+                await db.execute("ALTER TABLE users ADD COLUMN ledger_mode TEXT DEFAULT 'receivable'")
+            except Exception:
+                pass
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS shops (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1301,4 +1308,28 @@ async def sync_all_unlinked_customers():
                         break
             await db.commit()
             logger.info(f"Sinxronizatsiya natijasi (SQLite): {linked_count} ta mijoz ulandi.")
+
+async def get_user_ledger_mode(user_id: int) -> str:
+    """Foydalanuvchining oxirgi faol rejimini (receivable/payable) olish"""
+    if USE_POSTGRES:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            val = await conn.fetchval("SELECT ledger_mode FROM users WHERE telegram_id = $1", user_id)
+            return val if val else 'receivable'
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT ledger_mode FROM users WHERE telegram_id = ?", (user_id,)) as cur:
+                row = await cur.fetchone()
+                return row[0] if (row and row[0]) else 'receivable'
+
+async def set_user_ledger_mode(user_id: int, mode: str):
+    """Foydalanuvchining faol rejimini bazada qat'iy saqlash"""
+    if USE_POSTGRES:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            await conn.execute("UPDATE users SET ledger_mode = $1 WHERE telegram_id = $2", mode, user_id)
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("UPDATE users SET ledger_mode = ? WHERE telegram_id = ?", (mode, user_id))
+            await db.commit()
 
