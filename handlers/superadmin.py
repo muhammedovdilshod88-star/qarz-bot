@@ -388,22 +388,25 @@ async def export_single_shop_excel(call: CallbackQuery):
     )
     await call.message.answer_document(document=doc, caption=caption, parse_mode="HTML")
 
-@router.message(F.text == "📥 Barcha bazani Excelda yuklash")
+@router.message(F.text.in_(["📥 Barcha bazani Excelda yuklash", "📥 Barcha bazani yuklash (.ZIP)"]))
 async def export_all_platform_excel(message: Message):
     if not is_super_admin(message.from_user.id):
         return
-    await message.answer("⏳ Barcha do'konlar va mijozlar ma'lumotlari jamlanmoqda, kuting...")
+    await message.answer("⏳ Barcha do'konlar, qarzdorlar va hisobotlar to'liq .ZIP arxiv qilinmoqda, kuting...")
     
-    bio = await generate_full_platform_excel()
+    from utils.excel import generate_platform_backup_zip
+    bio = await generate_platform_backup_zip()
     from datetime import datetime
     date_str = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    filename = f"Qarz_Daftari_Backup_{date_str}.xlsx"
+    filename = f"Qarz_Daftari_Backup_{date_str}.zip"
     doc = BufferedInputFile(bio.getvalue(), filename=filename)
     
     caption = (
-        f"🛡 <b>Qarz Daftari Platformasi — To'liq Zaxira Fayli (Backup)</b>\n\n"
+        f"🛡 <b>Qarz Daftari Platformasi — To'liq Zaxira Arxivi (.ZIP)</b>\n\n"
         f"📅 Sana: <code>{date_str}</code>\n"
-        f"Barcha do'konlar, ularning egalari, qarzdor mijozlar va hisob-kitoblar ushbu faylda xavfsiz saqlangan."
+        f"📦 <b>Arxiv ichida:</b>\n"
+        f"1️⃣ <b>Barcha_Bazalar_va_Qarzlar.xlsx:</b> Barcha do'konlar, qarzdorlar, haqdorlar, dollar va so'm hisoblari\n"
+        f"2️⃣ <b>qarz_daftari_raw_backup.json:</b> Istalgan serverga 1 daqiqada qayta tiklash uchun to'liq ma'lumotlar bazasi"
     )
     await message.answer_document(document=doc, caption=caption, parse_mode="HTML")
 

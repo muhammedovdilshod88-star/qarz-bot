@@ -36,41 +36,53 @@ async def start_web_server():
     logger.info(f"Health check server {port}-portda ishga tushdi.")
 
 from datetime import datetime, timezone, timedelta
-from utils.excel import generate_full_platform_excel
+from utils.excel import generate_full_platform_excel, generate_platform_backup_zip
 from aiogram.types import BufferedInputFile
 
 # Toshkent vaqti mintaqasi (UTC+5)
 TASHKENT_TZ = timezone(timedelta(hours=5))
 
+async def send_full_backup_zip(bot: Bot, reason: str = "Kunlik Zaxira"):
+    """Barcha Super Adminlarga to'liq .zip zaxira arxivini yuborish"""
+    try:
+        now_tashkent = datetime.now(TASHKENT_TZ)
+        date_str = now_tashkent.strftime("%Y-%m-%d_%H-%M")
+        
+        bio = await generate_platform_backup_zip()
+        filename = f"Qarz_Daftari_Backup_{date_str}.zip"
+        doc = BufferedInputFile(bio.getvalue(), filename=filename)
+        
+        caption = (
+            f"🛡 <b>Qarz Daftari — To'liq Zaxira Arxivi (.ZIP)</b>\n\n"
+            f"📌 Sabab: <b>{reason}</b>\n"
+            f"📅 Sana: <code>{now_tashkent.strftime('%Y-%m-%d %H:%M')}</code> (Toshkent vaqti)\n\n"
+            f"📦 <b>Arxiv ichida:</b>\n"
+            f"1️⃣ <b>Barcha_Bazalar_va_Qarzlar.xlsx:</b> Barcha do'konlar, qarzdorlar, haqdorlar, dollar/so'm qarzlar va amallar tarixi\n"
+            f"2️⃣ <b>qarz_daftari_raw_backup.json:</b> Ma'lumotlarni 1 daqiqada qayta tiklash uchun to'liq baza fayli\n\n"
+            f"<i>(Barcha hisob-kitoblar 100% xavfsiz saqlangan)</i>"
+        )
+        for sa_id in config.SUPER_ADMIN_IDS:
+            try:
+                await bot.send_document(chat_id=sa_id, document=doc, caption=caption, parse_mode="HTML")
+                logger.info(f"Zaxira .zip Super Adminga ({sa_id}) muvaffaqiyatli yuborildi.")
+            except Exception as e:
+                logger.error(f"Backup yuborish xatosi ({sa_id}): {e}")
+    except Exception as ex:
+        logger.error(f"send_full_backup_zip xatosi: {ex}")
+
 async def daily_backup_scheduler(bot: Bot):
-    """Har kuni kechasi soat 23:00 da (Toshkent vaqti) Super Adminga avtomatik to'liq Excel zaxira yuborish"""
+    """Har kuni kechasi soat 23:00 da (Toshkent vaqti) Super Adminga avtomatik to'liq .ZIP zaxira yuborish"""
     last_backup_date = None
     while True:
         try:
             now_tashkent = datetime.now(TASHKENT_TZ)
             today_str = now_tashkent.strftime("%Y-%m-%d")
             
-            # Agar soat 23 bo'lsa va bugun hali yuborilmagan bo'lsa
+            # Har kuni soat 23:00 da (yoki 23 dan keyin hali bugun yuborilmagan bo'lsa)
             if now_tashkent.hour >= 23 and last_backup_date != today_str:
-                bio = await generate_full_platform_excel()
-                filename = f"Avto_Backup_{today_str}.xlsx"
-                doc = BufferedInputFile(bio.getvalue(), filename=filename)
-                
-                for sa_id in config.SUPER_ADMIN_IDS:
-                    try:
-                        await bot.send_document(
-                            chat_id=sa_id,
-                            document=doc,
-                            caption=f"🛡 <b>Avtomatik Kunlik Zaxira (Backup)</b>\n📅 Sana: <code>{today_str}</code> (23:00 Toshkent vaqti)\nBarcha do'konlar va qarz ma'lumotlari xavfsiz saqlangan.",
-                            parse_mode="HTML"
-                        )
-                    except Exception as e:
-                        logger.error(f"Backup yuborishda xatolik: {e}")
-                        
+                await send_full_backup_zip(bot, reason="Kunlik Rejali Zaxira (23:00)")
                 last_backup_date = today_str
-                logger.info(f"Kunlik zaxira muvaffaqiyatli yuborildi: {today_str}")
 
-            # Har 1 daqiqada tekshirib turadi
             await asyncio.sleep(60)
         except Exception as e:
             logger.error(f"Backup scheduler xatosi: {e}")
@@ -251,16 +263,18 @@ async def main():
     bot_info = await bot.get_me()
     logger.info(f"Bot ishga tushdi: @{bot_info.username} (ID: {bot_info.id})")
 
-    # Super Adminga bot ishga tushgani haqida signal yuborish
+    # Super Adminga bot ishga tushgani haqida signal yuborish va zaxira jo'natish
     for sa_id in config.SUPER_ADMIN_IDS:
         try:
             await bot.send_message(
                 chat_id=sa_id,
-                text=f"🟢 <b>Qarz va Nasiya Boti (@{bot_info.username}) serverda muvaffaqiyatli ishga tushdi va 24/7 faol!</b>",
+                text=f"🟢 <b>Qarz va Nasiya Boti (@{bot_info.username}) serverda muvaffaqiyatli ishga tushdi va 24/7 faol!</b>\n\nQuyida platformaning to'liq .ZIP zaxira arxivi jo'natilmoqda 👇",
                 parse_mode="HTML"
             )
         except Exception:
             pass
+            
+    asyncio.create_task(send_full_backup_zip(bot, reason="Server Ishga Tushgandagi Zaxira"))
 
     # Cheksiz qayta ulanish zanjiri (Uzilib qolsa ham avtomatik qayta ulanadi)
     while True:

@@ -192,6 +192,51 @@ async def generate_full_platform_excel() -> io.BytesIO:
     bio.seek(0)
     return bio
 
+import zipfile
+import json
+
+async def generate_platform_backup_zip() -> io.BytesIO:
+    """Super Admin uchun butun platformaning to'liq .zip arxiv zaxirasi (Excel + JSON Baza)"""
+    from datetime import datetime
+    excel_bio = await generate_full_platform_excel()
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    
+    all_shops = await db.list_all_shops()
+    export_data = {
+        "backup_date": date_str,
+        "platform": "Qarz Daftari Bot",
+        "shops": []
+    }
+    for s in all_shops:
+        s_dict = dict(s)
+        for k, v in s_dict.items():
+            if isinstance(v, datetime):
+                s_dict[k] = v.isoformat()
+        custs = await db.get_customers_by_shop(s['id'])
+        clean_custs = []
+        for c in custs:
+            c_dict = dict(c)
+            for ck, cv in c_dict.items():
+                if isinstance(cv, datetime):
+                    c_dict[ck] = cv.isoformat()
+            clean_custs.append(c_dict)
+        s_dict["customers"] = clean_custs
+        export_data["shops"].append(s_dict)
+        
+    json_bytes = json.dumps(export_data, ensure_ascii=False, indent=2).encode('utf-8')
+    
+    zip_bio = io.BytesIO()
+    with zipfile.ZipFile(zip_bio, mode='w', compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(f"Barcha_Bazalar_va_Qarzlar_{date_str}.xlsx", excel_bio.getvalue())
+        zf.writestr(f"qarz_daftari_raw_backup_{date_str}.json", json_bytes)
+        zf.writestr(
+            "README_KAFOLAT.txt", 
+            f"Qarz Daftari Bot - To'liq Zaxira (Backup)\nSana: {date_str}\nUshbu arxivda butun platformaning barcha do'konlari, qarzlar va amallar tarixi xavfsiz saqlangan."
+        )
+        
+    zip_bio.seek(0)
+    return zip_bio
+
 async def generate_customer_excel(telegram_id: int, user_full_name: str) -> io.BytesIO:
     """Oddiy mijoz/foydalanuvchi uchun uning shaxsiy barcha qarz va xaridlari Excel hisoboti (So'm va Dollar)"""
     accounts = await db.get_customers_by_telegram_id(telegram_id)

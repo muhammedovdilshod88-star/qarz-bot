@@ -5,7 +5,7 @@ def get_superadmin_main_kb() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="🏪 Barcha do'konlar"), KeyboardButton(text="🔍 Qidirish va Tiklash")],
             [KeyboardButton(text="➕ Yangi do'kon qo'shish"), KeyboardButton(text="📊 Platforma statistikasi")],
-            [KeyboardButton(text="📥 Barcha bazani Excelda yuklash"), KeyboardButton(text="🔙 Asosiy menyu")]
+            [KeyboardButton(text="📥 Barcha bazani yuklash (.ZIP)"), KeyboardButton(text="🔙 Asosiy menyu")]
         ],
         resize_keyboard=True
     )
