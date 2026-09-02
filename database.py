@@ -971,6 +971,34 @@ async def get_customer_transactions(customer_id: int, limit: int = 10):
                 rows = await cursor.fetchall()
                 return [dict(r) for r in rows]
 
+async def get_shop_transactions(shop_id: int, limit: int = 500):
+    """Do'kon bo'yicha barcha amallar tarixini mijoz ismi bilan olish"""
+    if USE_POSTGRES:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT t.*, c.full_name as customer_name
+                FROM transactions t
+                LEFT JOIN customers c ON t.customer_id = c.id
+                WHERE t.shop_id = $1
+                ORDER BY t.created_at DESC, t.id DESC
+                LIMIT $2
+            """, shop_id, limit)
+            return [dict(r) for r in rows]
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT t.*, c.full_name as customer_name
+                FROM transactions t
+                LEFT JOIN customers c ON t.customer_id = c.id
+                WHERE t.shop_id = ?
+                ORDER BY t.created_at DESC, t.id DESC
+                LIMIT ?
+            """, (shop_id, limit)) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(r) for r in rows]
+
 async def get_shop_statistics(shop_id: int, period: str = 'all', ledger_type: str = None) -> dict:
     period_filter_pg = {
         'today': "AND t.created_at >= CURRENT_DATE",
