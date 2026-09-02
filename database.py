@@ -641,8 +641,42 @@ async def delete_shop(shop_id: int):
 
 # ==================== CUSTOMERS (MIJOZLAR VA HAQDORLAR) ====================
 
+async def find_telegram_id_by_phone(phone: str):
+    """Telefon raqam bo'yicha users jadvalidan foydalanuvchining Telegram ID sini topish"""
+    if not phone:
+        return None
+    clean = "".join([c for c in str(phone) if c.isdigit()])
+    if len(clean) < 7:
+        return None
+    last9 = clean[-9:]
+    
+    if USE_POSTGRES:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT telegram_id FROM users 
+                WHERE RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g'), 9) = $1
+                ORDER BY created_at DESC LIMIT 1
+            """, last9)
+            return row['telegram_id'] if row else None
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT telegram_id, phone FROM users WHERE phone IS NOT NULL") as cur:
+                rows = await cur.fetchall()
+                for r in rows:
+                    u_clean = "".join([c for c in str(r['phone']) if c.isdigit()])
+                    if len(u_clean) >= 9 and u_clean[-9:] == last9:
+                        return r['telegram_id']
+    return None
+
 async def add_customer(shop_id: int, full_name: str, phone: str = None, telegram_id: int = None, ledger_type: str = 'receivable') -> int:
     ledger_type = ledger_type or 'receivable'
+    if not telegram_id and phone:
+        found_tg = await find_telegram_id_by_phone(phone)
+        if found_tg:
+            telegram_id = found_tg
+            
     if USE_POSTGRES:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
@@ -1189,16 +1223,13 @@ async def save_user(telegram_id: int, full_name: str = None, username: str = Non
             await db.commit()
 
 async def auto_link_customer_by_phone(telegram_id: int, phone: str, full_name: str = None):
-    """Telefon raqam orqali avval kiritilgan barcha qarz hisoblarini yangi foydalanuvchiga avtomatik ulash"""
+    """Telefon raqam orqali avval kiritilgan barcha qarz hisoblarini yangi foydalanuvchiga avtomatik ulash (bo'shliq va belgilardan xoli)"""
     if not phone:
         return []
-    clean_digits = "".join([c for c in phone if c.isdigit()])
-    if len(clean_digits) >= 9:
-        last9 = clean_digits[-9:]
-    else:
-        last9 = clean_digits
-        
-    search_pattern = f"%{last9}%"
+    clean_digits = "".join([c for c in str(phone) if c.isdigit()])
+    if len(clean_digits) < 7:
+        return []
+    last9 = clean_digits[-9:]
     linked = []
     
     if USE_POSTGRES:
@@ -1208,8 +1239,9 @@ async def auto_link_customer_by_phone(telegram_id: int, phone: str, full_name: s
                 SELECT c.*, s.name as shop_name, s.admin_id 
                 FROM customers c
                 JOIN shops s ON c.shop_id = s.id
-                WHERE c.telegram_id IS NULL AND c.phone LIKE $1
-            """, search_pattern)
+                WHERE c.telegram_id IS NULL 
+                  AND RIGHT(REGEXP_REPLACE(COALESCE(c.phone, ''), '[^0-9]', '', 'g'), 9) = $1
+            """, last9)
             for r in rows:
                 await conn.execute("""
                     UPDATE customers 
@@ -1220,16 +1252,53 @@ async def auto_link_customer_by_phone(telegram_id: int, phone: str, full_name: s
     else:
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
-            async with db.execute("""
-                SELECT c.*, s.name as shop_name, s.admin_id 
-                FROM customers c
-                JOIN shops s ON c.shop_id = s.id
-                WHERE c.telegram_id IS NULL AND c.phone LIKE ?
-            """, (search_pattern,)) as cur:
+            async with db.execute("SELECT c.*, s.name as shop_name, s.admin_id FROM customers c JOIN shops s ON c.shop_id = s.id WHERE c.telegram_id IS NULL") as cur:
                 rows = await cur.fetchall()
                 for r in rows:
-                    await db.execute("UPDATE customers SET telegram_id = ?, full_name = COALESCE(?, full_name) WHERE id = ?", (telegram_id, full_name, r['id']))
-                    linked.append(dict(r))
+                    c_clean = "".join([c for c in str(r['phone']) if c.isdigit()])
+                    if len(c_clean) >= 9 and c_clean[-9:] == last9:
+                        await db.execute("UPDATE customers SET telegram_id = ?, full_name = COALESCE(?, full_name) WHERE id = ?", (telegram_id, full_name, r['id']))
+                        linked.append(dict(r))
             await db.commit()
     return linked
+
+async def sync_all_unlinked_customers():
+    """Bot ishga tushganda yoki fon rejimida mavjud barcha ulanmagan mijozlarni users bazasi bilan sinxronizatsiya qilish"""
+    linked_count = 0
+    if USE_POSTGRES:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            # PostgreSQL da to'g'ridan-to'g'ri regex orqali users va customers ni bog'laymiz
+            res = await conn.execute("""
+                UPDATE customers c
+                SET telegram_id = u.telegram_id
+                FROM users u
+                WHERE c.telegram_id IS NULL
+                  AND c.phone IS NOT NULL
+                  AND u.phone IS NOT NULL
+                  AND RIGHT(REGEXP_REPLACE(c.phone, '[^0-9]', '', 'g'), 9) = RIGHT(REGEXP_REPLACE(u.phone, '[^0-9]', '', 'g'), 9)
+                  AND LENGTH(REGEXP_REPLACE(c.phone, '[^0-9]', '', 'g')) >= 7
+            """)
+            logger.info(f"Sinxronizatsiya natijasi: {res}")
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT telegram_id, phone FROM users WHERE phone IS NOT NULL") as cur_u:
+                users = await cur_u.fetchall()
+            async with db.execute("SELECT id, phone FROM customers WHERE telegram_id IS NULL AND phone IS NOT NULL") as cur_c:
+                customers = await cur_c.fetchall()
+                
+            for c in customers:
+                c_clean = "".join([d for d in str(c['phone']) if d.isdigit()])
+                if len(c_clean) < 7:
+                    continue
+                c_last9 = c_clean[-9:]
+                for u in users:
+                    u_clean = "".join([d for d in str(u['phone']) if d.isdigit()])
+                    if len(u_clean) >= 9 and u_clean[-9:] == c_last9:
+                        await db.execute("UPDATE customers SET telegram_id = ? WHERE id = ?", (u['telegram_id'], c['id']))
+                        linked_count += 1
+                        break
+            await db.commit()
+            logger.info(f"Sinxronizatsiya natijasi (SQLite): {linked_count} ta mijoz ulandi.")
 

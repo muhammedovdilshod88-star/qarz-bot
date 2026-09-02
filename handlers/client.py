@@ -246,42 +246,7 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
             await message.answer(f"⚠️ {msg}")
             return
 
-    # 3. Qarz / Nasiya beruvchi (Admin yoki Sherik) tekshiruvi
-    shop = await db.get_shop_by_admin(user_id)
-    if shop:
-        is_valid, days_left, expires_at = await db.check_shop_subscription(shop['id'])
-        if not is_valid:
-            text_expired = (
-                f"⚠️ <b>«{shop['name']}» — Obuna muddati tugadi!</b>\n\n"
-                f"Sizning 30 kunlik sinov muddatingiz yakunlandi.\n"
-                f"Botdan foydalanishni davom ettirish va qarzlarni boshqarish uchun obuna to'lovini amalga oshiring.\n\n"
-                f"💳 <b>To'lov uchun karta:</b> <code>{config.CARD_NUMBER}</code>\n"
-                f"👤 <b>Qabul qiluvchi:</b> {config.CARD_HOLDER}\n\n"
-                f"📌 <i>To'lov qilgach, chekni quyidagi tugma orqali adminga yuboring!</i>"
-            )
-            await message.answer(text_expired, parse_mode="HTML", reply_markup=get_subscription_kb())
-            return
-        
-        await message.answer(
-            f"Assalomu alaykum, <b>{user_full_name}</b>!\n"
-            f"📒 <b>«{shop['name']}»</b> — Qarz va Nasiya daftari boshqaruviga xush kelibsiz.\n"
-            f"⏳ <i>Obuna muddati: yana {days_left} kun faol.</i>",
-            parse_mode="HTML",
-            reply_markup=get_admin_main_kb(is_sa, days_left=days_left)
-        )
-        return
-        
-    # Agar boshqaruvchi bo'lmasa, lekin super admin bo'lsa
-    if is_sa and not command.args:
-        await message.answer(
-            f"Assalomu alaykum, <b>{user_full_name}</b> (Super Admin)!\n"
-            f"Siz tizim boshqaruvchisiz.",
-            parse_mode="HTML",
-            reply_markup=get_superadmin_main_kb()
-        )
-        return
-
-    # 4. Agar maxsus qarzdor taklif havolasi orqali kirayotgan bo'lsa (/start c_CUSTOMERID)
+    # 2. Agar maxsus qarzdor taklif havolasi orqali kirayotgan bo'lsa (/start c_CUSTOMERID)
     if args and args.startswith("c_"):
         try:
             cust_id = int(args.replace("c_", ""))
@@ -323,7 +288,7 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
         except Exception:
             pass
 
-    # 5. Agar umumiy QR kod orqali kirayotgan bo'lsa (/start shop_ID)
+    # 3. Agar umumiy QR kod orqali kirayotgan bo'lsa (/start shop_ID)
     if args and args.startswith("shop_"):
         try:
             shop_id = int(args.replace("shop_", ""))
@@ -338,50 +303,58 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
                         parse_mode="HTML"
                     )
                     return
-                
-                # Agar o'zining boshqa daftari bor bo'lsa -> Tasdiqlash oynasi
-                if own_shop:
-                    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-                    confirm_kb = InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="✅ Ha, hisobga ulanish", callback_data=f"confirm_join_{shop_id}")],
-                        [InlineKeyboardButton(text="🔙 O'z daftarimga qaytish", callback_data="back_to_my_shop")]
-                    ])
-                    text_confirm = (
-                        f"🔔 <b>{user_full_name}, diqqat!</b>\n\n"
-                        f"Siz <b>«{target_shop['name']}»</b> hisobining QR kodini skaner qildingiz.\n\n"
-                        f"Siz ushbu hisobga <b>Qarz oluvchi (Mijoz)</b> sifatida ulanmoqchimisiz?\n\n"
-                        f"💡 <i>Xavotir olmang, o'zingizning «{own_shop['name']}» daftaringiz to'liq saqlanadi va istalgan paytda o'z daftaringiz boshqaruviga qayta olasiz.</i>"
-                    )
-                    await message.answer(text_confirm, parse_mode="HTML", reply_markup=confirm_kb)
-                    return
-
-                # Allaqachon ulangan oddiy xaridor bo'lsa
-                existing_cust = await db.get_customers_by_telegram_id(user_id)
-                shop_cust = next((c for c in existing_cust if c['shop_id'] == shop_id), None)
-                if shop_cust and shop_cust['phone']:
-                    welcome_text = (
-                        f"👤 <b>SHAXSIY HISOBINGIZ (Xaridor rejimi)</b>\n"
-                        f"────────────────────\n"
-                        f"📒 Siz <b>«{target_shop['name']}»</b> hisobiga ulangansiz.\n"
-                        f"💰 Sizning joriy qarz/nasiya balansingiz: <b>{format_money(shop_cust['balance'])}</b>"
-                    )
-                    await message.answer(welcome_text, parse_mode="HTML", reply_markup=get_client_main_kb(has_own_shop=False))
-                    return
-                
-                # Telefon raqam so'rash
-                await state.set_state(CustomerRegisterState.waiting_for_phone)
-                await state.update_data(shop_id=shop_id, shop_name=target_shop['name'])
-                prompt_phone = (
-                    f"👋 Assalomu alaykum, <b>{user_full_name}</b>!\n\n"
-                    f"📒 Siz <b>«{target_shop['name']}»</b> Qarz va Nasiya hisobiga ulanmoqdasiz.\n\n"
-                    f"📱 Ulanish va hisob-kitoblaringizni kuzatib borish uchun pastdagi <b>«📱 Telefon raqamni ulashish»</b> tugmasini bosing:"
+                # Avval bu do'konga bog'langanmi?
+                existing_c = await db.get_customer_by_shop_and_user(shop_id, user_id)
+                if not existing_c:
+                    phone_val = db_user.get('phone') if db_user else None
+                    await db.add_customer(shop_id=shop_id, full_name=user_full_name, phone=phone_val, telegram_id=user_id)
+                await message.answer(
+                    f"Assalomu alaykum, <b>{user_full_name}</b>!\n\n"
+                    f"Siz <b>«{target_shop['name']}»</b> do'koni hisobiga muvaffaqiyatli bog'landingiz.\n"
+                    f"Endi sizning qarz va to'lov hisoblaringiz ushbu botda ko'rinib boradi.",
+                    parse_mode="HTML",
+                    reply_markup=get_client_main_kb()
                 )
-                await message.answer(prompt_phone, parse_mode="HTML", reply_markup=get_contact_kb())
                 return
         except Exception:
             pass
 
-    # 6. Oddiy mijoz (avval ulanib bo'lgan)
+    # 4. Qarz / Nasiya beruvchi (Admin yoki Sherik) tekshiruvi
+    shop = await db.get_shop_by_admin(user_id)
+    if shop:
+        is_valid, days_left, expires_at = await db.check_shop_subscription(shop['id'])
+        if not is_valid:
+            text_expired = (
+                f"⚠️ <b>«{shop['name']}» — Obuna muddati tugadi!</b>\n\n"
+                f"Sizning 30 kunlik sinov muddatingiz yakunlandi.\n"
+                f"Botdan foydalanishni davom ettirish va qarzlarni boshqarish uchun obuna to'lovini amalga oshiring.\n\n"
+                f"💳 <b>To'lov uchun karta:</b> <code>{config.CARD_NUMBER}</code>\n"
+                f"👤 <b>Qabul qiluvchi:</b> {config.CARD_HOLDER}\n\n"
+                f"📌 <i>To'lov qilgach, chekni quyidagi tugma orqali adminga yuboring!</i>"
+            )
+            await message.answer(text_expired, parse_mode="HTML", reply_markup=get_subscription_kb())
+            return
+        
+        await message.answer(
+            f"Assalomu alaykum, <b>{user_full_name}</b>!\n"
+            f"📒 <b>«{shop['name']}»</b> — Qarz va Nasiya daftari boshqaruviga xush kelibsiz.\n"
+            f"⏳ <i>Obuna muddati: yana {days_left} kun faol.</i>",
+            parse_mode="HTML",
+            reply_markup=get_admin_main_kb(is_sa, days_left=days_left)
+        )
+        return
+        
+    # Agar boshqaruvchi bo'lmasa, lekin super admin bo'lsa
+    if is_sa and not command.args:
+        await message.answer(
+            f"Assalomu alaykum, <b>{user_full_name}</b> (Super Admin)!\n"
+            f"Siz tizim boshqaruvchisiz.",
+            parse_mode="HTML",
+            reply_markup=get_superadmin_main_kb()
+        )
+        return
+
+    # 5. Oddiy mijoz (avval ulanib bo'lgan)
     cust_accounts = await db.get_customers_by_telegram_id(user_id)
     if cust_accounts:
         await message.answer(

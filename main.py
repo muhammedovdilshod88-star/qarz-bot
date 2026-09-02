@@ -245,6 +245,13 @@ async def main():
     asyncio.create_task(shop_subscription_reminder_scheduler(bot))
     asyncio.create_task(keep_alive_pinger())
 
+    # Barcha mavjud ulanmagan mijozlarni users bazasi bilan sinxronizatsiya qilish
+    try:
+        await db.sync_all_unlinked_customers()
+        logger.info("Barcha qarzdorlar va users bazasi to'liq sinxronizatsiya qilindi.")
+    except Exception as e:
+        logger.error(f"Sinxronizatsiya xatosi: {e}")
+
     # Global xatoliklar ushlovchisi (Error Handler)
     @dp.error()
     async def global_error_handler(event):
