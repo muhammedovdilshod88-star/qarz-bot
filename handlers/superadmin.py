@@ -415,43 +415,56 @@ async def show_platform_stats(message: Message):
     if not is_super_admin(message.from_user.id):
         return
     shops = await db.get_detailed_shops_analysis()
+    users_data = await db.get_platform_users_summary()
+    
+    total_users = users_data.get('total_users', 0)
+    recent_users = users_data.get('recent_users', [])
     
     total_shops = len(shops)
-    active_shops = [s for s in shops if s.get('customers_count', 0) > 0]
-    passive_shops = [s for s in shops if s.get('customers_count', 0) == 0]
+    active_shops = [s for s in shops if s.get('customers_count', 0) > 0 or s.get('transactions_count', 0) > 0]
+    passive_shops = [s for s in shops if s.get('customers_count', 0) == 0 and s.get('transactions_count', 0) == 0]
     
     total_customers_all = sum(s.get('customers_count', 0) for s in shops)
-    total_debt_all = sum(s.get('total_debt', 0.0) for s in shops)
+    total_debt_uzs = sum(s.get('total_debt', 0.0) for s in shops)
+    total_debt_usd = sum(s.get('total_debt_usd', 0.0) for s in shops)
+    total_tx_all = sum(s.get('transactions_count', 0) for s in shops)
+    
+    debt_display = format_money(total_debt_uzs, 'UZS')
+    if total_debt_usd > 0:
+        debt_display += f" | {format_money(total_debt_usd, 'USD')}"
     
     # TOP-5 Aktiv do'konlar
     top_active_text = ""
     for idx, s in enumerate(active_shops[:5], 1):
         top_active_text += f"{idx}. 🏪 <b>{s['name']}</b> — 👥 {s['customers_count']} mijoz | 💰 {format_money(s['total_debt'])}\n"
     if not top_active_text:
-        top_active_text = "<i>(Hozircha mijozli faol do'konlar yo'q)</i>\n"
+        top_active_text = "<i>(Hozircha faol mijozli do'konlar yo'q)</i>\n"
         
-    # Passiv do'konlar ro'yxati (telefonlari bilan aloqa qilish uchun)
-    passive_text = ""
-    for idx, s in enumerate(passive_shops[:5], 1):
-        phone = s['phone'] or "Tel yo'q"
-        passive_text += f"{idx}. 🏪 <b>{s['name']}</b> — 📞 <code>{phone}</code>\n"
-    if not passive_text:
-        passive_text = "<i>(Barcha do'konlar faol!)</i>\n"
+    # Oxirgi qo'shilgan bot foydalanuvchilari
+    recent_users_text = ""
+    for idx, u in enumerate(recent_users, 1):
+        u_phone = u.get('phone') or "Tel kiritilmagan"
+        recent_users_text += f"{idx}. 👤 <b>{u['full_name']}</b> — 📞 <code>{u_phone}</code>\n"
+    if not recent_users_text:
+        recent_users_text = "<i>(Hozircha a'zolar yo'q)</i>\n"
         
     text = (
         f"📊 <b>Qarz Daftari Platformasi Umumiy Statistikasi:</b>\n"
         f"────────────────────\n"
-        f"🏪 <b>Do'konlar holati:</b>\n"
-        f"• Jami ochilgan do'konlar: <b>{total_shops} ta</b>\n"
-        f"• 🟢 <b>Faol (Mijozli) do'konlar:</b> <b>{len(active_shops)} ta</b>\n"
-        f"• 🔴 <b>Passiv (0 mijoz) do'konlar:</b> <b>{len(passive_shops)} ta</b>\n\n"
-        f"👥 <b>Umumiy foydalanuvchilar:</b>\n"
-        f"• Platformadagi jami mijozlar: <b>{total_customers_all} nafar</b>\n"
-        f"• Do'konlarning jami nasiya balansi: <b>{format_money(total_debt_all)}</b>\n\n"
+        f"📱 <b>BOT FOYDALANUVCHILARI (A'ZOLAR):</b>\n"
+        f"• Botga a'zo bo'lgan jami odamlar: <b>{total_users} nafar</b>\n\n"
+        f"🏪 <b>QARZ DAFTARLARI (DO'KONLAR):</b>\n"
+        f"• Jami ochilgan do'konlar/daftarlar: <b>{total_shops} ta</b>\n"
+        f"• 🟢 <b>Faol (Mijozli) daftarlar:</b> <b>{len(active_shops)} ta</b>\n"
+        f"• 🔴 <b>Yangi / Passiv (0 mijozli):</b> <b>{len(passive_shops)} ta</b>\n\n"
+        f"👥 <b>QARZ VA HISOB-KITOBLAR:</b>\n"
+        f"• Daftarlarga yozilgan qarzdorlar: <b>{total_customers_all} nafar</b>\n"
+        f"• Jami nasiya qarzlari: <b>{debt_display}</b>\n"
+        f"• 🔄 Jami operatsiyalar (savdolar): <b>{total_tx_all} ta</b>\n\n"
+        f"🆕 <b>OXIRGI A'ZO BO'LGAN FOYDALANUVCHILAR:</b>\n"
+        f"{recent_users_text}\n"
         f"🏆 <b>ENG FAOL DO'KONLAR (TOP):</b>\n"
         f"{top_active_text}\n"
-        f"⚠️ <b>ALOQAGA CHIQISH KERAK (PASSIVLAR):</b>\n"
-        f"{passive_text}\n"
-        f"💡 <i>Passiv do'konchilarga telefon qilib, QR kodni osishni va qarz yozishni o'rgating!</i>"
+        f"💡 <i>Passiv do'konchilarga telefon qilib, qarzlarni yozishni o'rgatishingiz mumkin!</i>"
     )
     await message.answer(text, parse_mode="HTML", reply_markup=get_superadmin_main_kb())

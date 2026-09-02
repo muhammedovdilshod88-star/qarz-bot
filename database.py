@@ -539,7 +539,7 @@ async def list_all_shops():
                 return [dict(r) for r in rows]
 
 async def get_detailed_shops_analysis():
-    """Super Admin uchun barcha do'konlarni mijozlar soni va faolligi bilan tahlil qilish"""
+    """Super Admin uchun barcha do'konlarni mijozlar soni va faolligi bilan aniq tahlil qilish"""
     if USE_POSTGRES:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
@@ -552,14 +552,25 @@ async def get_detailed_shops_analysis():
                     s.is_active,
                     s.subscription_until,
                     EXTRACT(DAY FROM (s.subscription_until - NOW()))::INT as days_left,
-                    COUNT(DISTINCT c.id) as customers_count,
-                    COUNT(DISTINCT t.id) as transactions_count,
-                    COALESCE(SUM(CASE WHEN c.balance > 0 THEN c.balance ELSE 0 END), 0) as total_debt
+                    COALESCE(c_stat.customers_count, 0) as customers_count,
+                    COALESCE(c_stat.total_debt, 0) as total_debt,
+                    COALESCE(c_stat.total_debt_usd, 0) as total_debt_usd,
+                    COALESCE(t_stat.transactions_count, 0) as transactions_count
                 FROM shops s
-                LEFT JOIN customers c ON s.id = c.shop_id
-                LEFT JOIN transactions t ON s.id = t.shop_id
-                GROUP BY s.id, s.name, s.admin_id, s.phone, s.is_active, s.subscription_until
-                ORDER BY customers_count DESC, transactions_count DESC, s.id DESC
+                LEFT JOIN (
+                    SELECT shop_id, 
+                           COUNT(id) as customers_count,
+                           SUM(CASE WHEN balance > 0 THEN balance ELSE 0 END) as total_debt,
+                           SUM(CASE WHEN balance_usd > 0 THEN balance_usd ELSE 0 END) as total_debt_usd
+                    FROM customers
+                    GROUP BY shop_id
+                ) c_stat ON s.id = c_stat.shop_id
+                LEFT JOIN (
+                    SELECT shop_id, COUNT(id) as transactions_count
+                    FROM transactions
+                    GROUP BY shop_id
+                ) t_stat ON s.id = t_stat.shop_id
+                ORDER BY customers_count DESC, s.id DESC
             """)
             return [dict(r) for r in rows]
     else:
@@ -574,15 +585,57 @@ async def get_detailed_shops_analysis():
                     s.is_active,
                     s.subscription_until,
                     CAST(JULIANDAY(s.subscription_until) - JULIANDAY('now') AS INTEGER) as days_left,
-                    COUNT(DISTINCT c.id) as customers_count,
-                    COUNT(DISTINCT t.id) as transactions_count,
-                    COALESCE(SUM(CASE WHEN c.balance > 0 THEN c.balance ELSE 0 END), 0) as total_debt
+                    COALESCE(c_stat.customers_count, 0) as customers_count,
+                    COALESCE(c_stat.total_debt, 0) as total_debt,
+                    COALESCE(c_stat.total_debt_usd, 0) as total_debt_usd,
+                    COALESCE(t_stat.transactions_count, 0) as transactions_count
                 FROM shops s
-                LEFT JOIN customers c ON s.id = c.shop_id
-                LEFT JOIN transactions t ON s.id = t.shop_id
-                GROUP BY s.id, s.name, s.admin_id, s.phone, s.is_active, s.subscription_until
-                ORDER BY customers_count DESC, transactions_count DESC, s.id DESC
+                LEFT JOIN (
+                    SELECT shop_id, 
+                           COUNT(id) as customers_count,
+                           SUM(CASE WHEN balance > 0 THEN balance ELSE 0 END) as total_debt,
+                           SUM(CASE WHEN balance_usd > 0 THEN balance_usd ELSE 0 END) as total_debt_usd
+                    FROM customers
+                    GROUP BY shop_id
+                ) c_stat ON s.id = c_stat.shop_id
+                LEFT JOIN (
+                    SELECT shop_id, COUNT(id) as transactions_count
+                    FROM transactions
+                    GROUP BY shop_id
+                ) t_stat ON s.id = t_stat.shop_id
+                ORDER BY customers_count DESC, s.id DESC
             """
+            async with db.execute(query) as cur:
+                rows = await cur.fetchall()
+                return [dict(r) for r in rows]
+
+async def get_platform_users_summary():
+    """Botga start bosib telefonini tasdiqlagan barcha foydalanuvchilar (Users) statistikasi"""
+    if USE_POSTGRES:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            total_users = await conn.fetchval("SELECT COUNT(*) FROM users") or 0
+            recent_rows = await conn.fetch("""
+                SELECT full_name, phone, telegram_id, created_at 
+                FROM users 
+                ORDER BY created_at DESC 
+                LIMIT 8
+            """)
+            return {
+                'total_users': total_users,
+                'recent_users': [dict(r) for r in recent_rows]
+            }
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT COUNT(*) FROM users") as cur:
+                total_users = (await cur.fetchone())[0] or 0
+            async with db.execute("SELECT full_name, phone, telegram_id, created_at FROM users ORDER BY created_at DESC LIMIT 8") as cur:
+                recent_rows = await cur.fetchall()
+            return {
+                'total_users': total_users,
+                'recent_users': [dict(r) for r in recent_rows]
+            }
 async def get_expiring_shops():
     """Obunasi tugashiga 3 kun, 1 kun qolgan yoki tugagan do'konlarni olish (Avtomatik billing eslatmasi uchun)"""
     if USE_POSTGRES:
