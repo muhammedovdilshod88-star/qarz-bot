@@ -1210,9 +1210,45 @@ async def process_debt_description(message: Message, state: FSMContext, bot: Bot
             f"💰 Jami qarz balansi: <b>{balance_summary}</b>"
         )
     
-    # Agar mijoz hali botga ulanmagan bo'lsa, Telegram orqali yuborish tugmasini chiqaramiz
+    has_tg = bool(updated_customer.get('telegram_id'))
     notify_kb = None
-    if not updated_customer.get('telegram_id'):
+    
+    if has_tg:
+        # Allaqachon ulangan bo'lsa avtomatik xabar ketadi
+        auto_sent = False
+        try:
+            if is_payable:
+                client_notify = (
+                    f"📌 <b>«{shop['name']}»</b> hisobingizdan xabar:\n\n"
+                    f"Sizdan yangi qarz olindi: <b>+{format_money(data['debt_amount'], currency)}</b>\n"
+                    f"📝 Izoh / Sabab: <i>{html.escape(desc) if desc else 'Kiritilmadi'}</i>\n"
+                    f"💰 Sizga qaytarilishi kerak bo'lgan jami balans: <b>{balance_summary}</b>\n\n"
+                    f"💬 <a href='tg://user?id={shop['admin_id']}'>Bog'lanish</a>"
+                )
+            else:
+                client_notify = (
+                    f"📌 <b>«{shop['name']}»</b> hisobingizdan xabar:\n\n"
+                    f"Sizning hisobingizga yangi qarz / nasiya yozildi: <b>+{format_money(data['debt_amount'], currency)}</b>\n"
+                    f"📝 Izoh / Sabab: <i>{html.escape(desc) if desc else 'Kiritilmadi'}</i>\n"
+                    f"💰 Sizning jami balansingiz: <b>{balance_summary}</b>\n\n"
+                    f"💬 <a href='tg://user?id={shop['admin_id']}'>Bog'lanish</a>"
+                )
+            await bot.send_message(chat_id=updated_customer['telegram_id'], text=client_notify, parse_mode="HTML")
+            auto_sent = True
+        except Exception:
+            auto_sent = False
+            
+        if auto_sent:
+            target_role = "Haqdorga" if is_payable else "Qarzdorga"
+            msg_text += f"\n\n📲 <i>«{safe_name}» botga ulangan — qarz ma'lumotlari {target_role.lower()} Telegram orqali yetkazildi! ✅</i>"
+            
+        notify_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="👤 Sahifasini ochish", callback_data=f"view_cust_{updated_customer['id']}")]
+            ]
+        )
+    else:
+        # Hali botga ulanmagan bo'lsa, qo'lda yuborish tugmasi chiqadi
         cust_link = f"https://t.me/{bot_info.username}?start=c_{updated_customer['id']}"
         if is_payable:
             share_text = (
@@ -1235,38 +1271,15 @@ async def process_debt_description(message: Message, state: FSMContext, bot: Bot
             share_btn_text = "📤 Qarzdorga Telegramdan hisobni yuborish"
             
         share_url = f"https://t.me/share/url?url={quote(cust_link)}&text={quote(share_text)}"
+        msg_text += f"\n\n⚠️ <i>«{safe_name}» hali botga ulanmagan. Pastdagi tugma orqali unga hisobotni yuborishingiz mumkin 👇</i>"
         notify_kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text=share_btn_text, url=share_url)],
                 [InlineKeyboardButton(text="👤 Sahifasini ochish", callback_data=f"view_cust_{updated_customer['id']}")]
             ]
         )
-    else:
-        # Allaqachon ulangan bo'lsa avtomatik xabar ketadi
-        try:
-            if is_payable:
-                client_notify = (
-                    f"📌 <b>«{shop['name']}»</b> hisobingizdan xabar:\n\n"
-                    f"Sizdan yangi qarz olindi: <b>+{format_money(data['debt_amount'], currency)}</b>\n"
-                    f"📝 Izoh / Sabab: <i>{html.escape(desc) if desc else 'Kiritilmadi'}</i>\n"
-                    f"💰 Sizga qaytarilishi kerak bo'lgan jami balans: <b>{balance_summary}</b>\n\n"
-                    f"💬 <a href='tg://user?id={shop['admin_id']}'>Bog'lanish</a>"
-                )
-            else:
-                client_notify = (
-                    f"📌 <b>«{shop['name']}»</b> hisobingizdan xabar:\n\n"
-                    f"Sizning hisobingizga yangi qarz / nasiya yozildi: <b>+{format_money(data['debt_amount'], currency)}</b>\n"
-                    f"📝 Izoh / Sabab: <i>{html.escape(desc) if desc else 'Kiritilmadi'}</i>\n"
-                    f"💰 Sizning jami balansingiz: <b>{balance_summary}</b>\n\n"
-                    f"💬 <a href='tg://user?id={shop['admin_id']}'>Bog'lanish</a>"
-                )
-            await bot.send_message(chat_id=updated_customer['telegram_id'], text=client_notify, parse_mode="HTML")
-        except Exception:
-            pass
 
-    await message.answer(msg_text, parse_mode="HTML", reply_markup=notify_kb or get_admin_main_kb(is_sa, days_left=days_left, ledger_type=ledger_type))
-    if notify_kb:
-        await message.answer("Boshqaruv menyusi:", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=ledger_type))
+    await message.answer(msg_text, parse_mode="HTML", reply_markup=notify_kb)
 
 # ==================== TO'LOV QABUL QILISH / TO'LOV QILISH ====================
 
@@ -1381,9 +1394,43 @@ async def process_payment_amount(message: Message, state: FSMContext, bot: Bot):
             f"💰 Qolgan qarz balansi: <b>{balance_summary}</b>"
         )
     
-    # Agar mijoz hali ulanmagan bo'lsa, Telegramdan to'lov chekini jo'natish tugmasi
+    has_tg = bool(updated_customer.get('telegram_id'))
     notify_kb = None
-    if not updated_customer.get('telegram_id'):
+    
+    if has_tg:
+        auto_sent = False
+        try:
+            if is_payable:
+                client_notify = (
+                    f"✅ <b>«{shop['name']}»</b> hisobingizdan xabar:\n\n"
+                    f"Sizga <b>{format_money(amount, currency)}</b> qarz qaytarildi.\n"
+                    f"💰 Qolgan qarz balansi: <b>{balance_summary}</b>\n"
+                    f"Rahmat!\n\n"
+                    f"💬 <a href='tg://user?id={shop['admin_id']}'>Bog'lanish</a>"
+                )
+            else:
+                client_notify = (
+                    f"✅ <b>«{shop['name']}»</b> hisobingizdan xabar:\n\n"
+                    f"Sizning <b>{format_money(amount, currency)}</b> to'lovingiz qabul qilindi.\n"
+                    f"💰 Qolgan qarz balansingiz: <b>{balance_summary}</b>\n"
+                    f"Rahmat!\n\n"
+                    f"💬 <a href='tg://user?id={shop['admin_id']}'>Qarz beruvchi bilan bog'lanish</a>"
+                )
+            await bot.send_message(chat_id=updated_customer['telegram_id'], text=client_notify, parse_mode="HTML")
+            auto_sent = True
+        except Exception:
+            auto_sent = False
+            
+        if auto_sent:
+            target_role = "Haqdorga" if is_payable else "Qarzdorga"
+            msg_text += f"\n\n📲 <i>«{safe_name}» botga ulangan — to'lov ma'lumotlari {target_role.lower()} Telegram orqali yetkazildi! ✅</i>"
+            
+        notify_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="👤 Sahifasini ochish", callback_data=f"view_cust_{updated_customer['id']}")]
+            ]
+        )
+    else:
         cust_link = f"https://t.me/{bot_info.username}?start=c_{updated_customer['id']}"
         if is_payable:
             share_text = (
@@ -1406,37 +1453,15 @@ async def process_payment_amount(message: Message, state: FSMContext, bot: Bot):
             share_btn_text = "📤 Qarzdorga Telegramdan to'lov chekini yuborish"
             
         share_url = f"https://t.me/share/url?url={quote(cust_link)}&text={quote(share_text)}"
+        msg_text += f"\n\n⚠️ <i>«{safe_name}» hali botga ulanmagan. Pastdagi tugma orqali unga to'lov chekini yuborishingiz mumkin 👇</i>"
         notify_kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text=share_btn_text, url=share_url)],
                 [InlineKeyboardButton(text="👤 Sahifasini ochish", callback_data=f"view_cust_{updated_customer['id']}")]
             ]
         )
-    else:
-        try:
-            if is_payable:
-                client_notify = (
-                    f"✅ <b>«{shop['name']}»</b> hisobingizdan xabar:\n\n"
-                    f"Sizga <b>{format_money(amount, currency)}</b> qarz qaytarildi.\n"
-                    f"💰 Qolgan qarz balansi: <b>{balance_summary}</b>\n"
-                    f"Rahmat!\n\n"
-                    f"💬 <a href='tg://user?id={shop['admin_id']}'>Bog'lanish</a>"
-                )
-            else:
-                client_notify = (
-                    f"✅ <b>«{shop['name']}»</b> hisobingizdan xabar:\n\n"
-                    f"Sizning <b>{format_money(amount, currency)}</b> to'lovingiz qabul qilindi.\n"
-                    f"💰 Qolgan qarz balansingiz: <b>{balance_summary}</b>\n"
-                    f"Rahmat!\n\n"
-                    f"💬 <a href='tg://user?id={shop['admin_id']}'>Qarz beruvchi bilan bog'lanish</a>"
-                )
-            await bot.send_message(chat_id=updated_customer['telegram_id'], text=client_notify, parse_mode="HTML")
-        except Exception:
-            pass
-            
-    await message.answer(msg_text, parse_mode="HTML", reply_markup=notify_kb or get_admin_main_kb(is_sa, days_left=days_left, ledger_type=ledger_type))
-    if notify_kb:
-        await message.answer("Boshqaruv menyusi:", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=ledger_type))
+
+    await message.answer(msg_text, parse_mode="HTML", reply_markup=notify_kb)
 
 # ==================== QIDIRUV ====================
 
