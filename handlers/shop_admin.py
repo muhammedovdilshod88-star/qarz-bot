@@ -904,17 +904,22 @@ async def delete_customer_callback(call: CallbackQuery):
         await call.answer("Mijoz topilmadi!", show_alert=True)
         return
     
+    user_id = call.from_user.id
+    mode = get_user_ledger_mode(user_id)
+    
     await db.delete_customer(customer_id)
     await call.answer(f"✅ {customer['full_name']} ro'yxatdan o'chirildi.", show_alert=True)
     
-    shop = await db.get_shop_by_admin(call.from_user.id)
+    shop = await db.get_shop_by_admin(user_id)
     if shop:
-        customers = await db.list_shop_customers(shop['id'], sort_by_debt=True)
+        customers = await db.list_shop_customers(shop['id'], sort_by_debt=True, ledger_type=mode)
+        title = "📋 <b>Haqdorlar (Qarz beruvchilar) ro'yxati:</b>" if mode == 'payable' else "📋 <b>Qarzdorlar ro'yxati:</b>"
         if customers:
             kb = get_customers_list_kb(customers, page=0)
-            await call.message.edit_text("📋 <b>Mijozlar ro'yxati:</b>", reply_markup=kb, parse_mode="HTML")
+            await call.message.edit_text(f"{title}\nKerakli shaxsni tanlang:", reply_markup=kb, parse_mode="HTML")
         else:
-            await call.message.edit_text("Sizda hali mijozlar mavjud emas.")
+            empty_msg = "Sizda hali qarz beruvchilar (haqdorlar) mavjud emas." if mode == 'payable' else "Sizda hali qarzdorlar mavjud emas."
+            await call.message.edit_text(empty_msg)
 
 # ==================== YANGI QARZDOR QO'SHISH ====================
 
