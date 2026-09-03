@@ -25,6 +25,7 @@ class AdminStates(StatesGroup):
     add_staff_name = State()
     add_staff_tg_id = State()
     enter_custom_due_date = State()
+    edit_customer_phone = State()
 
 USER_LEDGER_MODES: dict = {}
 
@@ -857,6 +858,64 @@ async def show_sms_template(call: CallbackQuery):
     await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
     await call.answer()
 
+# ==================== TELEFON RAQAM QO'SHISH / TAHRIRLASH (AUTO-LINK) ====================
+
+@router.callback_query(F.data.startswith("editphone_"))
+async def start_edit_customer_phone(call: CallbackQuery, state: FSMContext):
+    customer_id = int(call.data.split("_")[1])
+    customer = await db.get_customer(customer_id)
+    if not customer:
+        await call.answer("Mijoz topilmadi!", show_alert=True)
+        return
+        
+    await state.set_state(AdminStates.edit_customer_phone)
+    await state.update_data(edit_cust_id=customer_id)
+    
+    current_phone = customer.get('phone') or "Kiritilmagan"
+    prompt = (
+        f"📞 <b>{customer['full_name']}</b> uchun telefon raqamini kiriting:\n\n"
+        f"Joriy raqam: <code>{current_phone}</code>\n\n"
+        f"📝 <i>Yangi raqamni yozing (Masalan: +998 90 123 45 67 yoki 901234567):</i>\n\n"
+        f"💡 <b>Agar bu inson botga a'zo bo'lgan bo'lsa, raqam kiritilishi bilanoq uning Telegrami avtomatik ulanadi!</b>"
+    )
+    await call.message.answer(prompt, parse_mode="HTML", reply_markup=get_cancel_kb())
+    await call.answer()
+
+@router.message(AdminStates.edit_customer_phone)
+async def process_edit_customer_phone(message: Message, state: FSMContext, bot: Bot):
+    if message.contact:
+        phone = message.contact.phone_number
+        if not phone.startswith("+"):
+            phone = "+" + phone
+    else:
+        phone_raw = message.text.strip() if message.text else ""
+        digits = "".join([c for c in phone_raw if c.isdigit()])
+        if len(digits) < 7:
+            await message.answer("⚠️ Iltimos, to'g'ri telefon raqam kiriting (kamida 7 ta raqam):")
+            return
+        phone = phone_raw if phone_raw.startswith("+") else f"+{phone_raw}"
+        
+    data = await state.get_data()
+    cust_id = data.get('edit_cust_id')
+    await state.clear()
+    
+    updated_cust = await db.update_customer_phone(cust_id, phone)
+    user_id = message.from_user.id
+    mode = get_user_ledger_mode(user_id)
+    shop = await db.get_shop_by_admin(user_id)
+    is_sa = user_id in config.SUPER_ADMIN_IDS
+    is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
+    
+    tg_connected = bool(updated_cust and updated_cust.get('telegram_id'))
+    status_text = "va <b>Telegram hisobi avtomatik ulandi! ✅</b>" if tg_connected else "saqlandi."
+    
+    await message.answer(
+        f"✅ <b>{updated_cust['full_name']}</b> ning telefon raqami (<code>{phone}</code>) {status_text}",
+        parse_mode="HTML",
+        reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=mode)
+    )
+    await render_customer_card(message, cust_id, bot, user_id=user_id)
+
 # ==================== QARZ TARIXI ====================
 
 @router.callback_query(F.data.startswith("history_"))
@@ -1230,6 +1289,12 @@ async def process_debt_description(message: Message, state: FSMContext, bot: Bot
             f"💰 Jami qarz balansi: <b>{balance_summary}</b>"
         )
     
+    if not updated_customer.get('telegram_id') and updated_customer.get('phone'):
+        found_tg = await db.find_telegram_id_by_phone(updated_customer['phone'])
+        if found_tg:
+            await db.link_customer_telegram(updated_customer['id'], found_tg)
+            updated_customer['telegram_id'] = found_tg
+            
     has_tg = bool(updated_customer.get('telegram_id'))
     notify_kb = None
     
@@ -1414,6 +1479,12 @@ async def process_payment_amount(message: Message, state: FSMContext, bot: Bot):
             f"💰 Qolgan qarz balansi: <b>{balance_summary}</b>"
         )
     
+    if not updated_customer.get('telegram_id') and updated_customer.get('phone'):
+        found_tg = await db.find_telegram_id_by_phone(updated_customer['phone'])
+        if found_tg:
+            await db.link_customer_telegram(updated_customer['id'], found_tg)
+            updated_customer['telegram_id'] = found_tg
+            
     has_tg = bool(updated_customer.get('telegram_id'))
     notify_kb = None
     
