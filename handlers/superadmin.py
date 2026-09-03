@@ -20,13 +20,10 @@ class SuperAdminStates(StatesGroup):
 
 from aiogram.filters import StateFilter
 
-@router.message(StateFilter('*'), F.text.in_(["❌ Bekor qilish", "/cancel"]))
+@router.message(StateFilter(SuperAdminStates), F.text.in_(["❌ Bekor qilish", "/cancel"]))
 async def superadmin_cancel(message: Message, state: FSMContext):
     await state.clear()
-    if is_super_admin(message.from_user.id):
-        await message.answer("Amal bekor qilindi.", reply_markup=get_superadmin_main_kb())
-    else:
-        await message.answer("Amal bekor qilindi.")
+    await message.answer("Amal bekor qilindi.", reply_markup=get_superadmin_main_kb())
 
 def is_super_admin(user_id: int) -> bool:
     return bool(config.SUPER_ADMIN_IDS and user_id in config.SUPER_ADMIN_IDS)

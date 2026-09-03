@@ -31,6 +31,15 @@ class UserAuthStates(StatesGroup):
 @router.message(StateFilter(UserRegisterShop, UserRecoverShop, CustomerRegisterState, UserAuthStates), F.text.in_(["❌ Bekor qilish", "/cancel"]))
 async def cancel_user_register_cb(message: Message, state: FSMContext):
     await state.clear()
+    user_id = message.from_user.id
+    shop = await db.get_shop_by_admin(user_id)
+    if shop:
+        is_sa = user_id in config.SUPER_ADMIN_IDS
+        is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
+        db_mode = await db.get_user_ledger_mode(user_id) or 'receivable'
+        await message.answer("Amal bekor qilindi.", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=db_mode))
+        return
+        
     promo_text = (
         f"👋 Assalomu alaykum, <b>{message.from_user.full_name}</b>!\n\n"
         f"🎁 <b>Siz uchun 1 OY (30 KUN) MUTLAQO BEPUL sinov muddati taqdim etiladi!</b>\n\n"
