@@ -37,9 +37,6 @@ def set_user_ledger_mode(user_id: int, mode: str):
 
 @router.message(StateFilter('*'), F.text.in_(["❌ Bekor qilish", "/cancel"]))
 async def cancel_action(message: Message, state: FSMContext, bot: Bot):
-    data = await state.get_data()
-    customer_id = data.get('customer_id')
-    state_mode = data.get('ledger_mode')
     await state.clear()
     
     user_id = message.from_user.id
@@ -49,23 +46,18 @@ async def cancel_action(message: Message, state: FSMContext, bot: Bot):
         return
         
     db_mode = await db.get_user_ledger_mode(user_id)
-    mode = state_mode or USER_LEDGER_MODES.get(user_id) or db_mode or 'receivable'
+    mode = USER_LEDGER_MODES.get(user_id) or db_mode or 'receivable'
     set_user_ledger_mode(user_id, mode)
     
     is_sa = user_id in config.SUPER_ADMIN_IDS
     is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
     
-    # 1. Agar bitta mijozning ichida bo'lsa -> o'sha mijozning kartasiga qaytadi
-    if customer_id:
-        cust = await db.get_customer(customer_id)
-        if cust:
-            await message.answer("Amal bekor qilindi.", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=mode))
-            await render_customer_card(message, customer_id, bot, user_id=user_id)
-            return
-
-    # 2. Agar mijoz ichida bo'lmasa -> Foydalanuvchi turgan joriy bo'limning asosiy menyusiga qaytadi
     mode_name = "🔴 <b>«Mening qarzlarim (Berishim kerak)»</b>" if mode == 'payable' else "🟢 <b>«Menga qarzlar (Qarzdorlar)»</b>"
-    await message.answer(f"Amal bekor qilindi.\nSiz {mode_name} bo'limidasiz:", parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=mode))
+    await message.answer(
+        f"Amal bekor qilindi.\nSiz {mode_name} boshqaruv menyusidasiz:",
+        parse_mode="HTML",
+        reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=mode)
+    )
 
 # ==================== IKKI TOMONLAMA REJIMNI ALMASHTIRISH (SWITCH LEDGER TABS) ====================
 
