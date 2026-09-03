@@ -261,6 +261,8 @@ def get_customer_actions_kb(customer_id: int, bot_username: str, shop_id: int, p
         
         if telegram_id:
             rows.append([InlineKeyboardButton(text="💬 Telegramiga yozish", url=f"tg://user?id={telegram_id}")])
+        else:
+            rows.append([InlineKeyboardButton(text="📤 Telegramdan taklif/qarzni yuborish", url=share_url)])
         
         phone_btn_text = f"📞 Tel: {phone}" if phone else "📞 Telefon raqam qo'shish (Auto-Link)"
         rows.append([InlineKeyboardButton(text=phone_btn_text, callback_data=f"editphone_{customer_id}")])
