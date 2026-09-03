@@ -501,43 +501,28 @@ async def start_open_my_store_cb(call: CallbackQuery, state: FSMContext):
     await call.answer()
 
 @router.message(UserRegisterShop.shop_name)
-async def process_user_shop_name(message: Message, state: FSMContext):
+async def process_user_shop_name(message: Message, state: FSMContext, bot: Bot):
     name = message.text.strip()
     if len(name) < 2:
-        await message.answer("Iltimos, haqiqiy nom kiriting:")
+        await message.answer("Iltimos, haqiqiy nom kiriting (masalan: Baraka Market yoki Shaxsiy qarzlar):")
         return
-    await state.update_data(shop_name=name)
-    await state.set_state(UserRegisterShop.shop_phone)
-    await message.answer(
-        f"Daftar/Faoliyat nomi: <b>{name}</b>\n\nPastdagi <b>«📱 Telefon raqamni ulashish»</b> tugmasini bosing yoki raqamingizni yozing:",
-        parse_mode="HTML",
-        reply_markup=get_contact_kb()
-    )
-
-@router.message(UserRegisterShop.shop_phone)
-async def process_user_shop_phone(message: Message, state: FSMContext, bot: Bot):
-    if message.contact:
-        phone = message.contact.phone_number
-        if not phone.startswith("+"):
-            phone = "+" + phone
-    else:
-        phone_raw = message.text.strip() if message.text else ""
-        phone = phone_raw if phone_raw != "-" else None
-    
-    data = await state.get_data()
+        
     user_id = message.from_user.id
     user_full_name = message.from_user.full_name
     
+    # Foydalanuvchining avval tasdiqlangan telefon raqamini bazadan olamiz
+    db_user = await db.get_user(user_id)
+    phone = db_user.get('phone') if db_user else None
+    
     try:
-        shop_id = await db.create_shop(data.get('shop_name', 'Yangi daftar'), user_id, phone, days=30)
+        shop_id = await db.create_shop(name, user_id, phone, days=30)
         await state.clear()
         
-        shop_name = data.get('shop_name', 'Daftar')
         welcome_msg = (
             f"🎉 <b>Tabriklaymiz, {user_full_name}!</b>\n\n"
-            f"📒 <b>«{shop_name}»</b> daftaringiz muvaffaqiyatli ochildi!\n"
+            f"📒 <b>«{name}»</b> daftaringiz muvaffaqiyatli ochildi!\n"
             f"🎁 Sizga <b>30 KUNLIK BEPUL SINOV MUDDATI</b> berildi.\n\n"
-            f"Boshqaruv menyusi quyida ochildi 👇"
+            f"👇 <b>Boshqaruv menyusi quyida ochildi. Hoziroq birinchi qarzingizni yozib ko'rishingiz mumkin:</b>"
         )
         is_sa = user_id in config.SUPER_ADMIN_IDS
         await message.answer(welcome_msg, parse_mode="HTML", reply_markup=get_admin_main_kb(is_sa, days_left=30))
@@ -549,7 +534,7 @@ async def process_user_shop_phone(message: Message, state: FSMContext, bot: Bot)
         qr_bio = generate_shop_qr(bot_info.username, shop_id)
         
         qr_caption = (
-            f"📲 <b>«{shop_name}» — Ulanish uchun maxsus QR Kod!</b>\n\n"
+            f"📲 <b>«{name}» — Ulanish uchun maxsus QR Kod!</b>\n\n"
             f"📌 <b>Buni qarzdorlaringizga berishingiz yoki osib qo'yishingiz mumkin:</b>\n"
             f"Odamlar bu kodni telefon kamerasida skaner qilsa, "
             f"to'g'ridan-to'g'ri sizning daftaringizga <b>Qarzdor</b> bo'lib ulanadi va o'z qarzlarini ko'rib boradi!\n\n"
@@ -562,7 +547,7 @@ async def process_user_shop_phone(message: Message, state: FSMContext, bot: Bot)
             try:
                 sa_notify = (
                     f"🔔 <b>Yangi daftar ochildi (Trial)!</b>\n\n"
-                    f"📒 Daftar: <b>{data.get('shop_name', '')}</b> (ID: {shop_id})\n"
+                    f"📒 Daftar: <b>{name}</b> (ID: {shop_id})\n"
                     f"👤 Egasi: <b>{user_full_name}</b>\n"
                     f"🆔 Telegram ID: <code>{user_id}</code>\n"
                     f"📞 Tel: {phone or 'Kiritilmadi'}\n"
