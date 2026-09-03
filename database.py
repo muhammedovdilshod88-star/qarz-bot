@@ -797,12 +797,21 @@ async def link_customer_telegram(customer_id: int, telegram_id: int, full_name: 
     if USE_POSTGRES:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
+            cust = await conn.fetchrow("SELECT * FROM customers WHERE id = $1", customer_id)
+            if not cust:
+                return None
+            await conn.execute("UPDATE customers SET telegram_id = NULL WHERE shop_id = $1 AND telegram_id = $2 AND id != $3", cust['shop_id'], telegram_id, customer_id)
             await conn.execute("UPDATE customers SET telegram_id = $1 WHERE id = $2", telegram_id, customer_id)
             row = await conn.fetchrow("SELECT * FROM customers WHERE id = $1", customer_id)
             return dict(row) if row else None
     else:
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)) as cursor:
+                cust = await cursor.fetchone()
+            if not cust:
+                return None
+            await db.execute("UPDATE customers SET telegram_id = NULL WHERE shop_id = ? AND telegram_id = ? AND id != ?", (cust['shop_id'], telegram_id, customer_id))
             await db.execute("UPDATE customers SET telegram_id = ? WHERE id = ?", (telegram_id, customer_id))
             await db.commit()
             async with db.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)) as cursor:
@@ -818,7 +827,11 @@ async def update_customer_phone(customer_id: int, phone: str):
     if USE_POSTGRES:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
+            cust = await conn.fetchrow("SELECT * FROM customers WHERE id = $1", customer_id)
+            if not cust:
+                return None
             if telegram_id:
+                await conn.execute("UPDATE customers SET telegram_id = NULL WHERE shop_id = $1 AND telegram_id = $2 AND id != $3", cust['shop_id'], telegram_id, customer_id)
                 await conn.execute("UPDATE customers SET phone = $1, telegram_id = $2 WHERE id = $3", phone, telegram_id, customer_id)
             else:
                 await conn.execute("UPDATE customers SET phone = $1 WHERE id = $2", phone, customer_id)
@@ -827,7 +840,12 @@ async def update_customer_phone(customer_id: int, phone: str):
     else:
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)) as cursor:
+                cust = await cursor.fetchone()
+            if not cust:
+                return None
             if telegram_id:
+                await db.execute("UPDATE customers SET telegram_id = NULL WHERE shop_id = ? AND telegram_id = ? AND id != ?", (cust['shop_id'], telegram_id, customer_id))
                 await db.execute("UPDATE customers SET phone = ?, telegram_id = ? WHERE id = ?", (phone, telegram_id, customer_id))
             else:
                 await db.execute("UPDATE customers SET phone = ? WHERE id = ?", (phone, customer_id))
