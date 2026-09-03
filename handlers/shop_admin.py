@@ -1370,6 +1370,8 @@ async def process_debt_description(message: Message, state: FSMContext, bot: Bot
         )
 
     await message.answer(msg_text, parse_mode="HTML", reply_markup=notify_kb)
+    mode = get_user_ledger_mode(message.from_user.id)
+    await message.answer("👇 Kerakli amalni tanlang:", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=mode))
 
 # ==================== TO'LOV QABUL QILISH / TO'LOV QILISH ====================
 
@@ -1564,6 +1566,21 @@ async def process_payment_amount(message: Message, state: FSMContext, bot: Bot):
         )
 
     await message.answer(msg_text, parse_mode="HTML", reply_markup=notify_kb)
+    mode = get_user_ledger_mode(message.from_user.id)
+    await message.answer("👇 Kerakli amalni tanlang:", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=mode))
+
+@router.message(F.text.in_(["⏩ Izohsiz saqlash", "Izohsiz saqlash", "⏩ Raqamsiz davom etish", "Raqamsiz davom etish"]))
+async def fallback_orphaned_skip_buttons(message: Message, state: FSMContext):
+    await state.clear()
+    user_id = message.from_user.id
+    shop = await db.get_shop_by_admin(user_id)
+    if shop:
+        is_valid, days_left, _ = await db.check_shop_subscription(shop['id'])
+        is_sa = user_id in config.SUPER_ADMIN_IDS
+        mode = get_user_ledger_mode(user_id)
+        await message.answer("👇 Kerakli amalni tanlang:", reply_markup=get_admin_main_kb(is_sa, days_left=days_left, ledger_type=mode))
+    else:
+        await message.answer("Bosh menyu.")
 
 # ==================== QIDIRUV ====================
 
