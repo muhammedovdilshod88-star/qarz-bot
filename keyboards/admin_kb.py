@@ -255,14 +255,12 @@ def get_customer_actions_kb(customer_id: int, bot_username: str, shop_id: int, p
             ],
             [
                 InlineKeyboardButton(text="📜 Amallar tarixi", callback_data=f"history_{customer_id}"),
-                InlineKeyboardButton(text="📤 Taklif yuborish", url=share_url)
+                InlineKeyboardButton(text="📲 SMS shabloni", callback_data=f"sms_{customer_id}")
             ]
         ]
         
-        comm_row = [InlineKeyboardButton(text="📲 SMS shabloni", callback_data=f"sms_{customer_id}")]
         if telegram_id:
-            comm_row.append(InlineKeyboardButton(text="💬 Telegramiga yozish", url=f"tg://user?id={telegram_id}"))
-        rows.append(comm_row)
+            rows.append([InlineKeyboardButton(text="💬 Telegramiga yozish", url=f"tg://user?id={telegram_id}")])
         
         phone_btn_text = f"📞 Tel: {phone}" if phone else "📞 Telefon raqam qo'shish (Auto-Link)"
         rows.append([InlineKeyboardButton(text=phone_btn_text, callback_data=f"editphone_{customer_id}")])

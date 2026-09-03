@@ -647,7 +647,7 @@ async def send_customer_reminder(call: CallbackQuery, bot: Bot):
     shop_name = shop['name'] if shop else "Qarz beruvchi"
     
     if not customer.get('telegram_id'):
-        await call.answer("⚠️ Qarzdor hali botga ulanmagan! Pastdagi '📲 SMS shabloni' orqali yuborishingiz mumkin.", show_alert=True)
+        await call.answer(f"⚠️ {customer['full_name']} botga ulanmagan!", show_alert=True)
         return
         
     if bal_u > 0 and bal_d > 0:
