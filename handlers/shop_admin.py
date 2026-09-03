@@ -1333,33 +1333,10 @@ async def process_debt_description(message: Message, state: FSMContext, bot: Bot
             ]
         )
     else:
-        # Hali botga ulanmagan bo'lsa, qo'lda yuborish tugmasi chiqadi
-        cust_link = f"https://t.me/{bot_info.username}?start=c_{updated_customer['id']}"
-        if is_payable:
-            share_text = (
-                f"Assalomu alaykum, {updated_customer['full_name']}!\n\n"
-                f"«{shop['name']}» dan hisob-kitob:\n"
-                f"Men sizdan yangi qarz oldim: +{format_money(data['debt_amount'], currency)}\n"
-                f"📝 Izoh: {desc or 'Qarz'}\n"
-                f"💰 Sizga berishim kerak bo'lgan jami qarzim: {balance_summary}\n\n"
-                f"Hisob-kitobni bot orqali kuzatib borish uchun ushbu havolani bosing:\n{cust_link}"
-            )
-            share_btn_text = "📤 Haqdorga hisobotni yuborish"
-        else:
-            share_text = (
-                f"Assalomu alaykum, {updated_customer['full_name']}!\n\n"
-                f"«{shop['name']}» da sizning hisobingizga yangi qarz/nasiya yozildi: +{format_money(data['debt_amount'], currency)}\n"
-                f"📝 Izoh: {desc or 'Xarid'}\n"
-                f"💰 Jami qarzingiz: {balance_summary}\n\n"
-                f"Hisob-kitobni bot orqali kuzatib borish uchun ushbu havolani bosing:\n{cust_link}"
-            )
-            share_btn_text = "📤 Qarzdorga Telegramdan hisobni yuborish"
-            
-        share_url = f"https://t.me/share/url?url={quote(cust_link)}&text={quote(share_text)}"
-        msg_text += f"\n\n⚠️ <i>«{safe_name}» hali botga ulanmagan. Pastdagi tugma orqali unga hisobotni yuborishingiz mumkin 👇</i>"
+        # Hali botga ulanmagan bo'lsa
+        msg_text += f"\n\n⚠️ <i>«{safe_name}» botga ulanmagan.</i>"
         notify_kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text=share_btn_text, url=share_url)],
                 [InlineKeyboardButton(text="👤 Sahifasini ochish", callback_data=f"view_cust_{updated_customer['id']}")]
             ]
         )
@@ -1522,32 +1499,10 @@ async def process_payment_amount(message: Message, state: FSMContext, bot: Bot):
             ]
         )
     else:
-        cust_link = f"https://t.me/{bot_info.username}?start=c_{updated_customer['id']}"
-        if is_payable:
-            share_text = (
-                f"Assalomu alaykum, {updated_customer['full_name']}!\n\n"
-                f"«{shop['name']}» dan hisob-kitob:\n"
-                f"Sizga {format_money(amount, currency)} to'lov qaytarildi.\n"
-                f"💰 Qolgan qarz balansi: {balance_summary}\n"
-                f"Rahmat!\n\n"
-                f"Hisobingizni botda kuzatib borish uchun:\n{cust_link}"
-            )
-            share_btn_text = "📤 Haqdorga to'lov chekini yuborish"
-        else:
-            share_text = (
-                f"Assalomu alaykum, {updated_customer['full_name']}!\n\n"
-                f"«{shop['name']}» da sizning {format_money(amount, currency)} to'lovingiz qabul qilindi.\n"
-                f"💰 Qolgan qarz balansingiz: {balance_summary}\n"
-                f"Rahmat!\n\n"
-                f"Hisobingizni botda kuzatib borish uchun:\n{cust_link}"
-            )
-            share_btn_text = "📤 Qarzdorga Telegramdan to'lov chekini yuborish"
-            
-        share_url = f"https://t.me/share/url?url={quote(cust_link)}&text={quote(share_text)}"
-        msg_text += f"\n\n⚠️ <i>«{safe_name}» hali botga ulanmagan. Pastdagi tugma orqali unga to'lov chekini yuborishingiz mumkin 👇</i>"
+        # Hali botga ulanmagan bo'lsa
+        msg_text += f"\n\n⚠️ <i>«{safe_name}» botga ulanmagan.</i>"
         notify_kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text=share_btn_text, url=share_url)],
                 [InlineKeyboardButton(text="👤 Sahifasini ochish", callback_data=f"view_cust_{updated_customer['id']}")]
             ]
         )
