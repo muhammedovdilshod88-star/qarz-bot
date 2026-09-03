@@ -103,6 +103,7 @@ async def process_user_recover_phone(message: Message, state: FSMContext, bot: B
 
 # ==================== TELEFON RAQAMNI TASDIQLASH (AUTH GATE) ====================
 
+@router.message(F.contact)
 @router.message(UserAuthStates.waiting_for_global_phone)
 async def process_global_phone_auth(message: Message, state: FSMContext, bot: Bot):
     if message.contact:
@@ -180,7 +181,7 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
                 [KeyboardButton(text="📱 Telefon raqamni yuborish", request_contact=True)]
             ],
             resize_keyboard=True,
-            one_time_keyboard=True
+            one_time_keyboard=False
         )
         auth_msg = (
             f"👋 Assalomu alaykum, <b>{user_full_name}</b>!\n\n"
