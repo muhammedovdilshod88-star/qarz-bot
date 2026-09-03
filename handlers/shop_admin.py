@@ -508,7 +508,7 @@ async def list_customers_cmd(message: Message, state: FSMContext):
         return
     
     mode = get_user_ledger_mode(user_id)
-    customers = await db.list_shop_customers(shop['id'], sort_by_debt=True, ledger_type=mode)
+    customers = await db.list_shop_customers(shop['id'], sort_by_debt=True, ledger_type=mode, user_telegram_id=user_id)
     
     if not customers:
         if mode == 'payable':
@@ -531,7 +531,7 @@ async def paginate_customers(call: CallbackQuery):
         return
     
     mode = get_user_ledger_mode(user_id)
-    customers = await db.list_shop_customers(shop['id'], sort_by_debt=True, ledger_type=mode)
+    customers = await db.list_shop_customers(shop['id'], sort_by_debt=True, ledger_type=mode, user_telegram_id=user_id)
     kb = get_customers_list_kb(customers, page=page)
     await call.message.edit_reply_markup(reply_markup=kb)
     await call.answer()
@@ -545,7 +545,7 @@ async def back_to_customers_list(call: CallbackQuery):
         return
     
     mode = get_user_ledger_mode(user_id)
-    customers = await db.list_shop_customers(shop['id'], sort_by_debt=True, ledger_type=mode)
+    customers = await db.list_shop_customers(shop['id'], sort_by_debt=True, ledger_type=mode, user_telegram_id=user_id)
     kb = get_customers_list_kb(customers, page=0)
     title = "📋 <b>Haqdorlar ro'yxati:</b>" if mode == 'payable' else "📋 <b>Qarzdorlar ro'yxati:</b>"
     await call.message.edit_text(title, reply_markup=kb, parse_mode="HTML")
@@ -562,19 +562,28 @@ async def render_customer_card(message: Message, customer_id: int, bot: Bot, use
     
     import html
     bot_info = await bot.get_me()
-    status_tg = "✅ Telegram ulangan" if customer.get('telegram_id') else "❌ Telegram hali ulanmagan"
-    phone_text = str(customer['phone']) if customer.get('phone') else "Kiritilmagan"
-    due_str = str(customer['due_date'])[:10] if customer.get('due_date') else None
-    
     chat_uid = user_id or message.chat.id
     mode = get_user_ledger_mode(chat_uid)
     ledger_type = customer.get('ledger_type') or mode
     
-    person_label = "Haqdor (Qarz beruvchi)" if ledger_type == 'payable' else "Mijoz / Qarzdor"
+    cust_shop = await db.get_shop_by_id(customer['shop_id'])
+    admin_shop = await db.get_shop_by_admin(chat_uid)
+    is_external = bool(cust_shop and admin_shop and cust_shop['id'] != admin_shop['id'])
+    
+    if is_external:
+        person_label = "🏪 Qarz beruvchi do'kon"
+        safe_name = html.escape(str(cust_shop['name']))
+        phone_text = str(cust_shop['phone']) if cust_shop.get('phone') else "Kiritilmagan"
+        status_tg = "✅ Do'kon hisobingizga ulangan"
+    else:
+        person_label = "Haqdor (Qarz beruvchi)" if ledger_type == 'payable' else "Mijoz / Qarzdor"
+        status_tg = "✅ Telegram ulangan" if customer.get('telegram_id') else "❌ Telegram hali ulanmagan"
+        phone_text = str(customer['phone']) if customer.get('phone') else "Kiritilmagan"
+        safe_name = html.escape(str(customer.get('full_name', 'Mijoz')))
+
+    due_str = str(customer['due_date'])[:10] if customer.get('due_date') else None
     due_label = "Qaytarish muddati" if ledger_type == 'payable' else "To'lov muddati"
     due_display = f"📅 <b>{due_label}:</b> <code>{due_str}</code> gacha\n" if due_str else ""
-    
-    safe_name = html.escape(str(customer.get('full_name', 'Mijoz')))
     safe_phone = html.escape(phone_text)
     
     bal_uzs = customer.get('balance', 0.0) or 0.0
@@ -602,7 +611,9 @@ async def render_customer_card(message: Message, customer_id: int, bot: Bot, use
         phone=customer.get('phone'),
         telegram_id=customer.get('telegram_id'),
         due_date_str=due_str,
-        ledger_type=ledger_type
+        ledger_type=ledger_type,
+        is_external=is_external,
+        shop_admin_id=cust_shop['admin_id'] if (is_external and cust_shop) else None
     )
     try:
         await message.edit_text(text, reply_markup=kb, parse_mode="HTML")
@@ -1592,7 +1603,7 @@ async def process_search_customer(message: Message, state: FSMContext):
     user_id = message.from_user.id
     shop = await db.get_shop_by_admin(user_id)
     mode = get_user_ledger_mode(user_id)
-    customers = await db.search_customers(shop['id'], query, ledger_type=mode)
+    customers = await db.search_customers(shop['id'], query, ledger_type=mode, user_telegram_id=user_id)
     
     await state.clear()
     is_sa = user_id in config.SUPER_ADMIN_IDS

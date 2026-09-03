@@ -210,9 +210,18 @@ def get_due_date_select_kb(customer_id: int) -> InlineKeyboardMarkup:
         ]
     )
 
-def get_customer_actions_kb(customer_id: int, bot_username: str, shop_id: int, phone: str = None, telegram_id: int = None, due_date_str: str = None, ledger_type: str = 'receivable') -> InlineKeyboardMarkup:
+def get_customer_actions_kb(customer_id: int, bot_username: str, shop_id: int, phone: str = None, telegram_id: int = None, due_date_str: str = None, ledger_type: str = 'receivable', is_external: bool = False, shop_admin_id: int = None) -> InlineKeyboardMarkup:
     from urllib.parse import quote
     customer_link = f"https://t.me/{bot_username}?start=c_{customer_id}"
+    
+    if is_external:
+        rows = [
+            [InlineKeyboardButton(text="📜 Amallar tarixi", callback_data=f"history_{customer_id}")],
+        ]
+        if shop_admin_id:
+            rows.append([InlineKeyboardButton(text="💬 Qarz beruvchiga yozish", url=f"tg://user?id={shop_admin_id}")])
+        rows.append([InlineKeyboardButton(text="🔙 Orqaga", callback_data="back_to_list")])
+        return InlineKeyboardMarkup(inline_keyboard=rows)
     
     if ledger_type == 'payable':
         # 🔴 HAQDOR (Qarz beruvchi) UCHUN TOZA TUGMALAR

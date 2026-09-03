@@ -918,11 +918,23 @@ async def get_due_reminders():
                 rows = await cursor.fetchall()
                 return [dict(r) for r in rows]
 
-async def get_customers_by_shop(shop_id: int, ledger_type: str = None):
+async def get_customers_by_shop(shop_id: int, ledger_type: str = None, user_telegram_id: int = None):
     if USE_POSTGRES:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
-            if ledger_type:
+            if ledger_type == 'payable' and user_telegram_id:
+                # 1. Do'kondagi o'zining payable haqdorlari
+                rows_own = await conn.fetch("SELECT * FROM customers WHERE shop_id = $1 AND COALESCE(ledger_type, 'receivable') = 'payable' ORDER BY balance DESC, balance_usd DESC, full_name ASC", shop_id)
+                # 2. Boshqa do'konlar ushbu userga yozgan qarzlari
+                rows_ext = await conn.fetch("""
+                    SELECT c.id, c.shop_id, ('🏪 ' || s.name || ' (Do''kon)') as full_name, s.phone, c.telegram_id, c.balance, c.balance_usd, c.due_date, 'payable' as ledger_type, 1 as is_external
+                    FROM customers c
+                    JOIN shops s ON c.shop_id = s.id
+                    WHERE c.telegram_id = $1 AND c.shop_id != $2 AND s.is_active = 1 AND (c.balance > 0 OR c.balance_usd > 0)
+                    ORDER BY c.balance DESC, c.balance_usd DESC
+                """, user_telegram_id, shop_id)
+                return [dict(r) for r in rows_own] + [dict(r) for r in rows_ext]
+            elif ledger_type:
                 rows = await conn.fetch("SELECT * FROM customers WHERE shop_id = $1 AND COALESCE(ledger_type, 'receivable') = $2 ORDER BY balance DESC, balance_usd DESC, full_name ASC", shop_id, ledger_type)
             else:
                 rows = await conn.fetch("SELECT * FROM customers WHERE shop_id = $1 ORDER BY balance DESC, balance_usd DESC, full_name ASC", shop_id)
@@ -930,7 +942,19 @@ async def get_customers_by_shop(shop_id: int, ledger_type: str = None):
     else:
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
-            if ledger_type:
+            if ledger_type == 'payable' and user_telegram_id:
+                async with db.execute("SELECT * FROM customers WHERE shop_id = ? AND COALESCE(ledger_type, 'receivable') = 'payable' ORDER BY balance DESC, balance_usd DESC, full_name ASC", (shop_id,)) as cursor:
+                    rows_own = await cursor.fetchall()
+                async with db.execute("""
+                    SELECT c.id, c.shop_id, ('🏪 ' || s.name || ' (Do''kon)') as full_name, s.phone, c.telegram_id, c.balance, c.balance_usd, c.due_date, 'payable' as ledger_type, 1 as is_external
+                    FROM customers c
+                    JOIN shops s ON c.shop_id = s.id
+                    WHERE c.telegram_id = ? AND c.shop_id != ? AND s.is_active = 1 AND (c.balance > 0 OR c.balance_usd > 0)
+                    ORDER BY c.balance DESC, c.balance_usd DESC
+                """, (user_telegram_id, shop_id)) as cursor2:
+                    rows_ext = await cursor2.fetchall()
+                return [dict(r) for r in rows_own] + [dict(r) for r in rows_ext]
+            elif ledger_type:
                 async with db.execute("SELECT * FROM customers WHERE shop_id = ? AND COALESCE(ledger_type, 'receivable') = ? ORDER BY balance DESC, balance_usd DESC, full_name ASC", (shop_id, ledger_type)) as cursor:
                     rows = await cursor.fetchall()
                     return [dict(r) for r in rows]
@@ -939,12 +963,26 @@ async def get_customers_by_shop(shop_id: int, ledger_type: str = None):
                     rows = await cursor.fetchall()
                     return [dict(r) for r in rows]
 
-async def search_customers(shop_id: int, query: str, ledger_type: str = None):
+async def search_customers(shop_id: int, query: str, ledger_type: str = None, user_telegram_id: int = None):
     search = f"%{query.strip()}%"
     if USE_POSTGRES:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
-            if ledger_type:
+            if ledger_type == 'payable' and user_telegram_id:
+                rows_own = await conn.fetch("""
+                    SELECT * FROM customers 
+                    WHERE shop_id = $1 AND COALESCE(ledger_type, 'receivable') = 'payable' AND (full_name ILIKE $2 OR phone ILIKE $2)
+                    ORDER BY full_name ASC
+                """, shop_id, search)
+                rows_ext = await conn.fetch("""
+                    SELECT c.id, c.shop_id, ('🏪 ' || s.name || ' (Do''kon)') as full_name, s.phone, c.telegram_id, c.balance, c.balance_usd, c.due_date, 'payable' as ledger_type, 1 as is_external
+                    FROM customers c
+                    JOIN shops s ON c.shop_id = s.id
+                    WHERE c.telegram_id = $1 AND c.shop_id != $2 AND s.is_active = 1 AND (s.name ILIKE $3 OR s.phone ILIKE $3)
+                    ORDER BY c.balance DESC
+                """, user_telegram_id, shop_id, search)
+                return [dict(r) for r in rows_own] + [dict(r) for r in rows_ext]
+            elif ledger_type:
                 rows = await conn.fetch("""
                     SELECT * FROM customers 
                     WHERE shop_id = $1 AND COALESCE(ledger_type, 'receivable') = $2 AND (full_name ILIKE $3 OR phone ILIKE $3)
@@ -960,7 +998,23 @@ async def search_customers(shop_id: int, query: str, ledger_type: str = None):
     else:
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
-            if ledger_type:
+            if ledger_type == 'payable' and user_telegram_id:
+                async with db.execute("""
+                    SELECT * FROM customers 
+                    WHERE shop_id = ? AND COALESCE(ledger_type, 'receivable') = 'payable' AND (full_name LIKE ? OR phone LIKE ?)
+                    ORDER BY full_name ASC
+                """, (shop_id, search, search)) as cursor:
+                    rows_own = await cursor.fetchall()
+                async with db.execute("""
+                    SELECT c.id, c.shop_id, ('🏪 ' || s.name || ' (Do''kon)') as full_name, s.phone, c.telegram_id, c.balance, c.balance_usd, c.due_date, 'payable' as ledger_type, 1 as is_external
+                    FROM customers c
+                    JOIN shops s ON c.shop_id = s.id
+                    WHERE c.telegram_id = ? AND c.shop_id != ? AND s.is_active = 1 AND (s.name LIKE ? OR s.phone LIKE ?)
+                    ORDER BY c.balance DESC
+                """, (user_telegram_id, shop_id, search, search)) as cursor2:
+                    rows_ext = await cursor2.fetchall()
+                return [dict(r) for r in rows_own] + [dict(r) for r in rows_ext]
+            elif ledger_type:
                 async with db.execute("""
                     SELECT * FROM customers 
                     WHERE shop_id = ? AND COALESCE(ledger_type, 'receivable') = ? AND (full_name LIKE ? OR phone LIKE ?)
@@ -1233,8 +1287,8 @@ async def get_shop_statistics(shop_id: int, period: str = 'all', ledger_type: st
                 'ledger_type': ledger_type or 'receivable'
             }
 
-async def list_shop_customers(shop_id: int, sort_by_debt: bool = True, ledger_type: str = None):
-    return await get_customers_by_shop(shop_id, ledger_type=ledger_type)
+async def list_shop_customers(shop_id: int, sort_by_debt: bool = True, ledger_type: str = None, user_telegram_id: int = None):
+    return await get_customers_by_shop(shop_id, ledger_type=ledger_type, user_telegram_id=user_telegram_id)
 
 async def list_shop_admins(shop_id: int):
     return await get_shop_staff(shop_id)
