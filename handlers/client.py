@@ -284,7 +284,9 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, state: F
                     f"💰 Sizning joriy qarz balansingiz: <b>{cust_bal_str}</b>\n\n"
                     f"Endi har gal xarid yoki to'lov amalga oshirilganda hisobotlar avtomatik yuboriladi."
                 )
-                await message.answer(welcome_text, parse_mode="HTML", reply_markup=get_client_main_kb())
+                own_shop = await db.get_shop_by_admin(user_id)
+                has_own_shop = bool(own_shop)
+                await message.answer(welcome_text, parse_mode="HTML", reply_markup=get_client_main_kb(has_own_shop=has_own_shop))
                 return
         except Exception:
             pass

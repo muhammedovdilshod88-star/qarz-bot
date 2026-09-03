@@ -793,6 +793,22 @@ async def register_telegram_customer(shop_id: int, telegram_id: int, full_name: 
                 row2 = await cursor2.fetchone()
                 return dict(row2)
 
+async def link_customer_telegram(customer_id: int, telegram_id: int, full_name: str = None):
+    if USE_POSTGRES:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            await conn.execute("UPDATE customers SET telegram_id = $1 WHERE id = $2", telegram_id, customer_id)
+            row = await conn.fetchrow("SELECT * FROM customers WHERE id = $1", customer_id)
+            return dict(row) if row else None
+    else:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            await db.execute("UPDATE customers SET telegram_id = ? WHERE id = ?", (telegram_id, customer_id))
+            await db.commit()
+            async with db.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)) as cursor:
+                row = await cursor.fetchone()
+                return dict(row) if row else None
+
 async def update_customer_phone(customer_id: int, phone: str):
     """Mijozning telefon raqamini kiritish/yangilash va uni users bazasidagi Telegram ID ga avtomatik bog'lash"""
     telegram_id = None
